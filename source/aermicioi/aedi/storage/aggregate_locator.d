@@ -32,9 +32,9 @@ module aermicioi.aedi.storage.aggregate_locator;
 
 import aermicioi.aedi.exception.not_found_exception;
 import aermicioi.aedi.storage.locator;
+import aermicioi.aedi.util.typecons : Pair, pair;
 import std.conv : to;
 import std.range.interfaces;
-import std.typecons;
 
 /**
 An implementation of AggregateLocator.
@@ -105,7 +105,7 @@ An implementation of AggregateLocator.
                 }
             }
 
-            throw new NotFoundException("Could not find an object with " ~ identity.to!string ~ " identity.");
+            throw new NotFoundException("Could not find component with ${identity} identity.", identity.to!string);
         }
 
         /**
@@ -148,20 +148,20 @@ An implementation of AggregateLocator.
                 return this.locators[key];
             }
 
-            throw new NotFoundException("Could not find any locator with identity of " ~ key);
+            throw new NotFoundException("Could not find any locator with identity ${identity}", key);
         }
 
         /**
         Get all locators in aggregate locator
 
         Returns:
-        	InputRange!(Tuple!(Locator!(Type, KeyType), LocatorKeyType)) a range of locator => identity
+        	InputRange!(Pair!(Locator!(Type, KeyType), LocatorKeyType)) a range of locator => identity
         **/
-        InputRange!(Tuple!(Locator!(Type, KeyType), LocatorKeyType)) getLocators() {
+        InputRange!(Pair!(Locator!(Type, KeyType), LocatorKeyType)) getLocators() {
             import std.algorithm : map;
 
             return this.locators.byKeyValue.map!(
-                a => tuple(a.value, a.key)
+                a => pair(a.value, a.key)
             ).inputRangeObject;
         }
 

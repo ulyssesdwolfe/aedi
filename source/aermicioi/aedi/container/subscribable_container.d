@@ -37,12 +37,11 @@ import aermicioi.aedi.storage.alias_aware;
 import aermicioi.aedi.storage.storage;
 import aermicioi.aedi.factory.factory;
 import aermicioi.aedi.exception.not_found_exception;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 import std.meta;
 import std.traits;
 
 import std.range.interfaces;
-import std.typecons;
 
 /**
 Interface for objects that can be subscribed to specific events emmited by them.
@@ -129,7 +128,6 @@ template SubscribableContainer(T)
         InterfacesTuple!T),
         Container,
         Subscribable!ContainerInstantiationEventType,
-        MutableDecorator!T,
         Decorator!Container
     );
 
@@ -138,7 +136,6 @@ template SubscribableContainer(T)
         private
         {
             void delegate() @safe[][ContainerInstantiationEventType] subscribers;
-            T decorated_;
         }
 
         public

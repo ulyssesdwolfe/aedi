@@ -76,10 +76,7 @@ derived from Object.
                 typeof(this)
             **/
             typeof(this) allocator(RCIAllocator allocator) @safe nothrow
-            in {
-                assert(allocator !is null);
-            }
-            body {
+            in (allocator !is null, "Expected an allocator, not null.") {
                 this.allocator_ = allocator;
                 this.decorated.allocator = allocator;
 
@@ -105,10 +102,7 @@ derived from Object.
             	this
             **/
         	WrappingFactory!(T, Z) decorated(T decorated) @safe nothrow pure
-            in {
-                assert(decorated !is null);
-            }
-            body {
+            in (decorated !is null, "Expected a factory to decorate for type " ~ typeid(T).toString ~ " not null.") {
         		this.decorated_ = decorated;
 
         		return this;
@@ -222,11 +216,7 @@ derived from Object.
 
             import aermicioi.aedi.exception.invalid_cast_exception : InvalidCastException;
             throw new InvalidCastException(
-                "Cannot destruct component of type " ~
-                component.classinfo.toString() ~
-                " that is not managed by factory of " ~
-                typeid(Z).toString() ~
-                " components."
+                "Cannot destruct component of type ${actual} expected component of ${expected} type", null, typeid(Z), component.classinfo
             );
         }
 

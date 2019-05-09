@@ -32,7 +32,7 @@ module aermicioi.aedi.configurer.register.container;
 import aermicioi.aedi.container;
 import std.traits;
 import std.meta;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 
 @safe:
 
@@ -201,6 +201,69 @@ auto aggregate(T...)(Container managed, string identity, T manageds) {
 	AggregateContainer container = new AggregateContainer;
 
 	return container.aggregate(managed, identity, manageds);
+}
+
+/**
+Wrap up container into describing container.
+
+Wrap up container into describing container, that
+provides description of itself and underlying components
+through a set of Describer components.
+
+Params:
+	componentDescriber = describer for components container manages
+	fallbackComponentDescriber = fallback describer in case componentDescriber fails to describe particular component
+	containerDescriber = describer used to describe container itself
+
+Returns:
+	DescribingContainer!T
+**/
+auto describing(T : Container)(T container, Describer!() componentDescriber, Describer!() containerDescriber, Describer!() fallbackComponentDescriber) {
+	return new DescribingContainer!T(container, componentDescriber, containerDescriber, fallbackComponentDescriber);
+}
+
+/**
+ditto
+**/
+auto describing(T : Container)(T container, Describer!() componentDescriber, Describer!() containerDescriber) {
+	return new DescribingContainer!T(container, componentDescriber, containerDescriber);
+}
+
+/**
+ditto
+**/
+auto describing(T : Container)(T container, Describer!() componentDescriber, string title, string description) {
+	return new DescribingContainer!T(container, componentDescriber, new StaticDescriber!()(typeid(T).toString, title, description));
+}
+
+/**
+ditto
+**/
+auto describing(T : Container)(T container, string title = null, string description = null) {
+	return new DescribingContainer!T(container, new IdentityDescriber!(), new StaticDescriber!()(typeid(T).toString, title, description));
+}
+
+/**
+A prebuilt container with all features enabled.
+
+Params:
+	title = container title.
+	description = container description.
+
+Returns:
+	Prebuild container from singleton, prototype, and values containers.
+**/
+auto application(string title, string description) {
+	return aggregate(
+		singleton.typed, "singleton",
+		prototype.typed, "prototype",
+		values, "parameters"
+	)
+	.aliasing
+	.gcRegistered
+	.deffered
+	.describing(title, description)
+	.subscribable;
 }
 
 private {

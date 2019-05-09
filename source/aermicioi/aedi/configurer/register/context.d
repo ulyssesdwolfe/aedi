@@ -322,6 +322,11 @@ struct ValueRegistrationContext {
         Storage!(Object, string) storage;
 
         /**
+        Locator used for configuration purposes of features outside value container, yet related to the managed components.
+        **/
+        Locator!() locator;
+
+        /**
         Register a component into value container by identity, type or interface.
 
         Register a component into value container by identity, type or interface.
@@ -335,7 +340,7 @@ struct ValueRegistrationContext {
         Returns:
         	ValueRegistrationContext
         **/
-        ref ValueRegistrationContext register(T)(auto ref T value, string identity) {
+        ValueContext register(T)(auto ref T value, string identity) {
             static if (is(T : Object)) {
                 storage.set(value, identity);
             } else {
@@ -344,22 +349,43 @@ struct ValueRegistrationContext {
                 storage.set(new WrapperImpl!T(value), identity);
             }
 
-            return this;
+            return ValueContext(identity, storage, locator);
         }
 
         /**
         ditto
         **/
-        ref ValueRegistrationContext register(T)(auto ref T value) {
+        ValueContext register(T)(auto ref T value) {
             return register!T(value, fullyQualifiedName!T);
         }
 
         /**
         ditto
         **/
-        ref ValueRegistrationContext register(Interface, T : Interface)(auto ref T value) {
+        ValueContext register(Interface, T : Interface)(auto ref T value) {
             return register!T(value, fullyQualifiedName!Interface);
         }
+    }
+
+    /**
+    Value context useable for further configuration of container
+    **/
+    static struct ValueContext {
+
+        /**
+        Identity of managed component
+        **/
+        string identity;
+
+        /**
+        Storage of component
+        **/
+        Storage!(Object, string) storage;
+
+        /**
+        Locator of components. Used for configuration of features not directly related to value container.
+        **/
+        Locator!() locator;
     }
 }
 
@@ -377,6 +403,23 @@ Returns:
 **/
 ValueRegistrationContext configure(Storage!(Object, string) storage) {
     return ValueRegistrationContext(storage);
+}
+
+/**
+Start registering instantiated components into a value container.
+
+Start registering instantiated components into a value container.
+Description
+
+Params:
+    locator = container that has the storage
+	storage = identity of storage to use
+
+Returns:
+	ValueRegistrationContext context that provides register api, using storage to store registered components.
+**/
+ValueRegistrationContext configureValueContainer(Locator!() locator, string storage) {
+    return ValueRegistrationContext(locator.locate!(Storage!(Object, string))(storage), locator);
 }
 
 /**
@@ -556,10 +599,7 @@ struct DefferredConfigurationContext(
             locator = locator used to get registered component's dependencies
         **/
         this(R context, string executionerIdentity)
-        in {
-            assert(executionerIdentity !is null);
-        }
-        body {
+        in (executionerIdentity !is null, "Expected identity of deferred executioner where to store deffered actions") {
             this.context = context;
             this.executionerIdentity = executionerIdentity;
         }
@@ -579,18 +619,18 @@ struct DefferredConfigurationContext(
         **/
         ConfigurationContextFactory!T register(T)(string identity) {
             import aermicioi.aedi.exception.not_found_exception : NotFoundException;
+            import aermicioi.aedi.storage.decorator : decorators, filterByInterface;
 
             ConfigurationContextFactory!T factory = this.context.register!T(identity);
 
-            auto defferedExecutioinerAware = cast(DefferredExecutionerAware) factory.decorated;
-            if (defferedExecutioinerAware !is null) {
-                try {
+            auto candidates = factory.wrapper
+                .decorators!ObjectFactory
+                .filterByInterface!DefferredExecutionerAware
+                .chain(factory.decorated.only.filterByInterface!DefferredExecutionerAware);
 
-                    auto executioner = this.context.locator.locate!DefferredExecutioner();
-                    defferedExecutioinerAware.executioner = executioner;
-                } catch (NotFoundException e) {
-
-                }
+            if (!candidates.empty) {
+                auto executioner = this.context.locator.locate!DefferredExecutioner();
+                candidates.front.executioner = executioner;
             }
 
             return factory;
@@ -651,10 +691,7 @@ struct DefferredConfigurationContext(
             locator = locator used to get registered component's dependencies
         **/
         this(R context, string executionerIdentity)
-        in {
-            assert(executionerIdentity !is null);
-        }
-        body {
+        in (executionerIdentity !is null, "Expected identity of deferred executioner where to store deffered actions") {
             this.context = context;
             this.executionerIdentity = executionerIdentity;
         }
@@ -798,10 +835,7 @@ struct DefferredConstructionContext(
             locator = locator used to get registered component's dependencies
         **/
         this(R context, string executionerIdentity)
-        in {
-            assert(executionerIdentity !is null);
-        }
-        body {
+        in (executionerIdentity !is null, "Expected identity of deferred executioner where to store deffered actions") {
             this.executionerIdentity = executionerIdentity;
         }
 

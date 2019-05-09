@@ -29,6 +29,8 @@ Authors:
 **/
 module aermicioi.aedi.storage.decorator;
 
+import std.range.primitives : isInputRange, isForwardRange, ElementType;
+
 /**
 Provides the underlying decorated object.
 **/
@@ -71,29 +73,83 @@ Allows to get and set decorated object.
 }
 
 /**
-Find a decorator in decorator chain that implements Needle type.
-
-Find a decorator in decorator chain that implements Needle type.
+Treat component as a chain of decorated entities and express this as a range of decorators.
 
 Params:
-	Needle = the type searched decorator should implement
-	Haystack = type of the chain of decorators through which to traverse
-	decorated = top of decorator chain.
+	ComponentType = The original type of component attempted to interpret as a range of decorators.
+	DecoratorType = type each decorator in decorator chain.
+	component = component to express as a range of decorators.
 
 Returns:
-	Decorator or null if not found.
+	DecoratorChain!(ComponentType, DecoratorType) the range.
 **/
-Needle findDecorator(Needle, Haystack : Decorator!Z, Z, T)(T decorated) @trusted {
+DecoratorChain!(ComponentType, DecoratorType) decorators(DecoratorType, ComponentType)(ComponentType component) {
+	return DecoratorChain!(ComponentType, DecoratorType)(component);
+}
 
-    Haystack decorator = cast(Haystack) decorated;
-    Needle needle = cast(Needle) decorated;
+/**
+ditto
+**/
+@safe struct DecoratorChain(ComponentType, DecoratorType)
+if (is(ComponentType == class) || is(ComponentType == interface)) {
+	import std.traits : Unqual, QualifierOf;
+	import std.typecons : Rebindable;
 
-    while ((needle is null) && (decorator !is null)) {
-        decorator = cast(Haystack) decorator.decorated;
-        needle = cast(Needle) decorator;
-    }
+	private alias QualifierOfComponentType = QualifierOf!ComponentType;
+	private alias QualifiedDecoratorType = QualifierOfComponentType!(Decorator!DecoratorType);
 
-    return needle;
+	private Rebindable!(QualifiedDecoratorType) current;
+
+	/**
+	Constructor for decorator chain
+
+	Params:
+		initial = starting point of decorated component
+	**/
+	this(ComponentType initial) @trusted {
+		current = cast(QualifiedDecoratorType) initial;
+	}
+
+	private this(QualifiedDecoratorType copy) {
+		current = copy;
+	}
+
+	/**
+	Whether empty or not
+
+	Returns:
+		true if empty false otherwise
+	**/
+	bool empty() {
+		return current is null;
+	}
+
+	/**
+	The first decorator in chain of decorators.
+
+	Returns:
+		Decorated component with storage class preserved.
+	**/
+	QualifiedDecoratorType front() {
+		return current;
+	}
+
+	/**
+	Move to next decorator in chain
+	**/
+	void popFront() @trusted {
+		current = cast(QualifiedDecoratorType) current.decorated;
+	}
+
+	/**
+	Save decorator range.
+
+	Returns:
+		A copy of current range
+	**/
+	typeof(this) save() {
+		return typeof(this)(current);
+	}
 }
 
 /**
@@ -128,7 +184,8 @@ Mixin implementing MutableDecorator for a decorated element of T.
 			T
 		**/
 		inout(T) decorated() @safe nothrow pure inout {
-			return this.decorated_;
+			auto t = this.decorated_;
+			return t;
 		}
 	}
 }

@@ -38,14 +38,13 @@ import aermicioi.aedi.storage.locator;
 import aermicioi.aedi.exception.di_exception;
 import aermicioi.aedi.storage.locator_aware;
 
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 
 import std.algorithm;
 import std.meta;
 import std.range;
 import std.traits;
-import std.typecons;
-
+import std.typecons : AutoImplement;
 
 /**
 Creates a proxy to an object or interface of type T,
@@ -117,9 +116,10 @@ that is located in source locator by some identity.
 
             import aermicioi.aedi.exception.invalid_cast_exception : InvalidCastException;
             throw new InvalidCastException(
-                "Cannot destruct component " ~
-                typeid(T).toString() ~
-                " since passed component is not a proxysince passed component is not a proxy to it."
+                "Cannot destruct component ${identity} because it is not a proxied object. Expected ${expected} while got ${actual}",
+                null,
+                typeid(Proxy!T),
+                typeid(T)
             );
         }
 
@@ -463,10 +463,7 @@ to set proxied object's identity and locator.
 
         **/
         void destruct(ref Object component) @safe
-        in {
-            assert(component !is null);
-        }
-        body {
+        in (component !is null, "Cannot destroy a null component, expected component of type " ~ typeid(T).toString) {
             T proxy = cast(T) component;
 
             if (proxy !is null) {
@@ -477,10 +474,10 @@ to set proxied object's identity and locator.
 
             import aermicioi.aedi.exception.invalid_cast_exception : InvalidCastException;
             throw new InvalidCastException(
-                "Cannot destruct component of type " ~
-                component.classinfo.toString() ~
-                "because it is not managed by proxy factory for type " ~
-                typeid(T).toString()
+                "Cannot destruct component ${identity} because it is not managed by this proxy factory. Expected ${expected} while got ${actual}",
+                null,
+                typeid(Proxy!T),
+                component.classinfo
             );
         }
     }

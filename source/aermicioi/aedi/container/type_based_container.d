@@ -30,21 +30,21 @@ Authors:
 module aermicioi.aedi.container.type_based_container;
 
 import aermicioi.aedi.container.container;
+import aermicioi.aedi.container.decorating_mixin;
 import aermicioi.aedi.storage.alias_aware;
 import aermicioi.aedi.storage.decorator;
 import aermicioi.aedi.storage.storage;
 import aermicioi.aedi.storage.object_storage;
 import aermicioi.aedi.exception.not_found_exception;
 import aermicioi.aedi.factory.factory;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
+import aermicioi.aedi.util.range : inheritance;
 
 import std.algorithm;
 import std.array;
 import std.range;
-import std.typecons;
 import std.traits;
 import std.meta;
-import std.container.rbtree;
 
 /**
 A decorating container that can provide for requested
@@ -75,7 +75,6 @@ template TypeBasedContainer(T) {
         NoDuplicates!(
             Container,
             Storage!(ObjectFactory, string),
-            MutableDecorator!T,
             Decorator!Container,
             Filter!(
                 templateOr!(
@@ -95,14 +94,10 @@ template TypeBasedContainer(T) {
     @safe class TypeBasedContainer : InheritanceSet {
 
         private {
-            ObjectStorage!(RedBlackTree!(string), string) candidates;
+            string[][TypeInfo] entries;
         }
 
         public {
-            this() {
-                this.candidates = new ObjectStorage!(RedBlackTree!string, string);
-            }
-
             mixin MutableDecoratorMixin!T;
 
             import aermicioi.aedi.container.decorating_mixin : ContainerMixin;
@@ -128,15 +123,14 @@ template TypeBasedContainer(T) {
 
                 ClassInfo info = cast(ClassInfo) factory.type;
                 if (info !is null) {
-                    info.crawlClassInfo(
-                        (TypeInfo_Class crawled) @safe {
-                            if (!this.candidates.has(crawled.toString())) {
-                                this.candidates.set(new RedBlackTree!string, crawled.toString());
-                            }
-
-                            this.candidates.get(crawled.toString()).insert(identity);
+                    foreach (TypeInfo inherited; info.inheritance) {
+                        if (
+                            (inherited !in this.entries) ||
+                            !this.entries[inherited].canFind(identity)
+                        ) {
+                            this.entries[inherited] ~= identity;
                         }
-                    );
+                    }
                 }
 
                 return this;
@@ -158,11 +152,9 @@ template TypeBasedContainer(T) {
             TypeBasedContainer remove(string identity) @trusted {
                 decorated.remove(identity);
 
-                foreach (pair; this.candidates.contents.byKeyValue.array) {
-                    pair.value.removeKey(identity);
-
-                    if (pair.value.empty) {
-                        this.candidates.remove(pair.key);
+                foreach (type, candidates; this.entries) {
+                    if (candidates.canFind(identity)) {
+                        this.entries[type] = candidates.filter!(entry => entry != identity).array;
                     }
                 }
 
@@ -192,14 +184,13 @@ template TypeBasedContainer(T) {
                     return this.decorated.get(identity);
                 }
 
-                if (this.candidates.has(identity)) {
-                    return
-                    this.decorated.get(
-                        this.candidates.get(identity).front
-                    );
+                foreach (type, candidates; this.entries) {
+                    if (identity == type.toString) {
+                        return this.decorated.get(candidates.front);
+                    }
                 }
 
-                throw new NotFoundException("Component with id " ~ identity ~ " not found.");
+                throw new NotFoundException("Component ${identity} not found.", identity);
             }
 
             /**
@@ -217,108 +208,28 @@ template TypeBasedContainer(T) {
         		bool true if an object by identity is present in TypeBasedContainer.
             **/
             bool has(in string identity) inout {
-                if (this.decorated_.has(identity)) {
+                if (this.decorated.has(identity)) {
                     return true;
                 }
 
-                return this.candidates.has(identity);
+                foreach (type, candidates; this.entries) {
+                    if (identity == type.toString) {
+                        return !candidates.empty;
+                    }
+                }
+
+                return false;
             }
 
             static if (is(T : AliasAware!string)) {
-                /**
-                Alias a key to an alias_.
-
-                Params:
-                	identity = the originial identity which is to be aliased.
-                	alias_ = the alias of identity.
-
-        		Returns:
-        			this
-                **/
-                TypeBasedContainer link(string identity, string alias_) {
-                    this.decorated.link(identity, alias_);
-
-                    return this;
-                }
-
-                /**
-                Removes alias.
-
-                Params:
-                	alias_ = alias to remove.
-
-                Returns:
-                    this
-
-                **/
-                TypeBasedContainer unlink(string alias_) {
-                    this.decorated.unlink(alias_);
-
-                    return this;
-                }
-
-                /**
-                Resolve an alias to original identity, if possible.
-
-                Params:
-                	alias_ = alias of original identity
-
-                Returns:
-                	Type the last identity in alias chain.
-
-                **/
-                const(string) resolve(in string alias_) const {
-                    return this.decorated_.resolve(alias_);
-                }
+                mixin AliasAwareMixin!T;
             }
 
             static if (is(T : FactoryLocator!ObjectFactory)) {
-                /**
-                Get factory for constructed component identified by identity.
 
-                Get factory for constructed component identified by identity.
-                Params:
-                	identity = the identity of component that factory constructs.
-
-                Throws:
-                	NotFoundException when factory for it is not found.
-
-                Returns:
-                	ObjectFactory the factory for constructed component.
-                **/
-                ObjectFactory getFactory(string identity) {
-                    return this.decorated.getFactory(identity);
-                }
-
-                /**
-                Get all factories available in decorated.
-
-                Get all factories available in decorated.
-
-                Returns:
-                	InputRange!(Tuple!(ObjectFactory, string)) a tuple of factory => identity.
-                **/
-                InputRange!(Tuple!(ObjectFactory, string)) getFactories() {
-                    return this.decorated.getFactories();
-                }
+                mixin FactoryLocatorMixin!(typeof(this));
             }
         }
 
     }
-}
-
-private {
-    void crawlClassInfo(TypeInfo_Class class_, void delegate (TypeInfo_Class) @safe dg) @safe {
-        dg(class_);
-
-        foreach (iface; class_.interfaces) {
-            crawlClassInfo(iface.classinfo, dg);
-        }
-
-        if (class_.base !is null) {
-            crawlClassInfo(class_.base, dg);
-        }
-    }
-
-
 }

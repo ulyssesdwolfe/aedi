@@ -31,6 +31,7 @@ Authors:
 module aermicioi.aedi.exception.in_progress_exception;
 
 import aermicioi.aedi.exception.di_exception;
+import aermicioi.aedi.util.range : BufferSink;
 
 /**
 Thrown when a new object is requested from factory when it is already in process of creating another one.
@@ -38,13 +39,42 @@ Thrown when a new object is requested from factory when it is already in process
 Usually it tells the DI that there is a circular dependency when it tries to construct a object.
 **/
 @safe class InProgressException : AediException {
-	pure nothrow this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+    /**
+    Type of component on which this exception was thrown
+    **/
+    TypeInfo type;
+
+    /**
+     * Creates a new instance of Exception. The nextInChain parameter is used
+     * internally and should always be $(D null) when passed by user code.
+     * This constructor does not automatically throw the newly-created
+     * Exception; the $(D throw) statement should be used for that purpose.
+     */
+	pure nothrow this(string msg, string identity, TypeInfo type, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+        this.type = type;
     }
 
-    nothrow this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__)
+    /**
+    ditto
+    **/
+    nothrow this(string msg, string identity, TypeInfo type, Throwable next, string file = __FILE__, size_t line = __LINE__)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+        this.type = type;
     }
+
+    override void pushMessage(scope void delegate(in char[]) sink) const @system {
+        import std.algorithm : substitute;
+        import std.utf : byChar;
+		auto substituted = this.msg.substitute("${identity}", identity, "${type}", type.toString).byChar;
+
+        while (!substituted.empty) {
+            auto buffer = BufferSink!(char[256])();
+            buffer.put(substituted);
+
+            sink(buffer.slice);
+        }
+	}
 }

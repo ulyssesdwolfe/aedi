@@ -34,6 +34,7 @@ module aermicioi.aedi.configurer.annotation.component_scan;
 import aermicioi.aedi.configurer.annotation.annotation;
 import aermicioi.aedi.storage.locator;
 import aermicioi.aedi.storage.storage;
+import aermicioi.aedi.storage.alias_aware : AliasAware;
 import aermicioi.aedi.storage.wrapper;
 import aermicioi.aedi.container.container;
 import aermicioi.aedi.factory.factory;
@@ -41,14 +42,14 @@ import aermicioi.aedi.factory.reference;
 import aermicioi.aedi.factory.generic_factory;
 import aermicioi.aedi.factory.proxy_factory;
 import aermicioi.aedi.exception;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 import aermicioi.aedi.factory.wrapping_factory : WrappingFactory;
 
 import std.traits;
 import std.meta;
-import std.typecons;
 import std.conv : to;
 import std.algorithm;
+import std.experimental.logger;
 
 /**
 Check if a type T is a factory policy.
@@ -76,12 +77,6 @@ enum bool isConfiguratorPolicy(T, X : GenericFactory!Z = GenericFactory!Object, 
 Create a GenericFactory!T if T is annotated with @component annotation.
 **/
 @safe struct GenericFactoryPolicy {
-
-    private alias getComponents(alias T) = Filter!(
-            isComponentAnnotation,
-            allUDAs!T
-        );
-
     /**
     Create a GenericFactory!T if T is annotated with @component annotation.
 
@@ -92,30 +87,24 @@ Create a GenericFactory!T if T is annotated with @component annotation.
         GenericFactory!T
     **/
     static GenericFactory!T createFactory(T)(Locator!() locator) {
-        alias Component = getComponents!T;
+        GenericFactory!T factory;
 
-        static if (Component.length > 0) {
-            debug(annotationScanDebug) pragma(msg, "Creating factory for component ", T);
-            return new GenericFactoryImpl!T(locator);
-        } else {
-
-            return null;
+        alias Components = allUDAs!T;
+        static foreach (index; 0 .. Components.length) {
+            static if (isComponentAnnotation!(Components[index])) {
+                debug(annotationScanDebug) trace(typeid(T), " is marked with @component annotation, creating a component factory for it.");
+                factory = new GenericFactoryImpl!T(locator);
+            }
         }
-    };
+
+        return factory;
+    }
 }
 
 /**
 A factory policy that uses annotations implementing factory policy interface on component to instantiate the component.
 **/
 @safe struct GenericFactoryAnnotationPolicy {
-
-    private alias getGenericFactoryPolicies(T, X) = Filter!(
-        chain!(
-            ApplyRight!(isFactoryPolicy, X),
-            toType
-        ),
-        allUDAs!T
-    );
 
     /**
     Create a component factory for T using annotations on it that implement factory policy interface.
@@ -128,17 +117,17 @@ A factory policy that uses annotations implementing factory policy interface on 
     **/
     static GenericFactory!T createFactory(T)(Locator!() locator) {
 
-        alias FactoryPolicies = getGenericFactoryPolicies!(T, T);
+        GenericFactory!T factory;
 
-        foreach (FactoryPolicy; tuple(FactoryPolicies)) {
-            auto factory = FactoryPolicy.createFactory!T(locator);
+        alias FactoryPolicies = allUDAs!T;
 
-            if (factory !is null) {
-                return factory;
+        static foreach (index; 0 .. FactoryPolicies.length) {
+            static if (isFactoryPolicy!(toType!(FactoryPolicies[index]), T)) {
+                factory = FactoryPolicies[index].createFactory!T(locator);
             }
         }
 
-        return null;
+        return factory;
     }
 }
 
@@ -159,13 +148,13 @@ A factory policy that applies in order a set of factory policies to create compo
     **/
     static GenericFactory!T createFactory(T)(Locator!() locator) {
 
-        foreach (FactoryPolicy; FactoryPolicies) {
-            auto factory = FactoryPolicy.createFactory!T(locator);
+        static foreach (FactoryPolicy; FactoryPolicies) {{
+            GenericFactory!T factory = FactoryPolicy.createFactory!T(locator);
 
             if (factory !is null) {
                 return factory;
             }
-        }
+        }}
 
         return null;
     }
@@ -198,11 +187,6 @@ Set allocator used by factory to instantiate component T.
 **/
 @safe struct AllocatorConfiguratorPolicy {
 
-    private alias getAllocators(alias T) = Filter!(
-            isAllocatorAnnotation,
-            allUDAs!T
-        );
-
     /**
     Set allocator from @allocator annotation into GenericFactory!Z.
 
@@ -212,9 +196,12 @@ Set allocator used by factory to instantiate component T.
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
-        static foreach (Allocator; getAllocators!Z) {
-            debug(annotationScanDebug) pragma(msg, "Found custom allocator for ", Z, " provisioning with ", typeof(Allocator.allocator));
-            instantiator.allocator = Allocator.iallocator;
+        alias Allocators = allUDAs!Z;
+        static foreach (index; 0 .. Allocators.length) {
+            static if (isAllocatorAnnotation!(Allocators[index])) {
+                debug(annotationScanDebug) trace(typeid(Z), " is marked with @allocator annotation, supplying component factory with custom allocator ", Allocators[index].allocator);
+                instantiator.allocator = Allocators[index].iallocator;
+            }
         }
     }
 }
@@ -236,19 +223,19 @@ Set callback instance factory from @callbac annotation into GenericFactory!Z
         locator = locator used by factory
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
-        import std.experimental.allocator;
+        alias CallbackFactories = allUDAs!Z;
 
-        foreach (CallbackFactory; tuple(getCallbackFactories!Z).expand) {
-            debug(annotationScanDebug) pragma(msg,
-                "Found callback factory for ",
-                Z,
-                " provisioning with ",
-                typeof(CallbackFactory.dg),
-                "(",
-                typeof(CallbackFactory.args.expand),
-                ")"
-            );
-            instantiator.setInstanceFactory(callbackFactory(CallbackFactory.dg, CallbackFactory.args.expand));
+        static foreach (index; 0 .. CallbackFactories.length) {
+            static if (isCallbackFactoryAnnotation!(CallbackFactories[index])) {
+                debug(annotationScanDebug) trace(
+                    typeid(Z),
+                    " is annotated with @callback annotation, supplying component factory with construction callable of ",
+                    typeid(CallbackFactories[index].dg),
+                    " and provided args ",
+                    CallbackFactories[index].args
+                );
+                instantiator.setInstanceFactory(callbackFactory(CallbackFactories[index].dg, CallbackFactories[index].args));
+            }
         }
     }
 }
@@ -257,10 +244,6 @@ Set callback instance factory from @callbac annotation into GenericFactory!Z
 Set value factory that takes component from @value annotation and provides it as a new component.
 **/
 @safe struct ValueFactoryConfiguratorPolicy {
-    private alias getValueFactories(alias T) = Filter!(
-            isValueAnnotation,
-            allUDAs!T
-        );
 
     /**
     Set value factory that takes component from @value annotation and provides it as a new component.
@@ -270,16 +253,13 @@ Set value factory that takes component from @value annotation and provides it as
         locator = locator used by factory
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
-        import std.experimental.allocator;
+        alias ValueAnnotations = allUDAs!Z;
+        static foreach (index; 0 .. ValueAnnotations.length) {
+            static if (isValueAnnotation!(ValueAnnotations[index])) {
 
-        foreach (ValueAnnotation; tuple(getValueFactories!Z).expand) {
-            debug(annotationScanDebug) pragma(msg,
-                "Found value factory for ",
-                Z,
-                " provisioning with ",
-                typeof(ValueAnnotation.value)
-            );
-            instantiator.setInstanceFactory(new ValueInstanceFactory!Z(ValueAnnotation.value));
+                debug(annotationScanDebug) trace(typeid(Z), " is annotated with @value annotation, using ", ValueAnnotations[index].value, " as prebuilt component");
+                instantiator.setInstanceFactory(new ValueInstanceFactory!Z(ValueAnnotations[index].value));
+            }
         }
     }
 }
@@ -288,14 +268,6 @@ Set value factory that takes component from @value annotation and provides it as
 A policy that uses annotations that implement isConfigurerPolicy interface to configure the component factory
 **/
 @safe struct GenericConfigurerConfiguratorPolicy {
-    private alias getGenerics(alias T, X) = Filter!(
-                chain!(
-                    ApplyRight!(isConfiguratorPolicy, X),
-                    toType
-                ),
-                allUDAs!T
-            );
-
     /**
     Scans for annotations implementing isConfigurerPolicy interface and uses them to configure component factory.
 
@@ -304,9 +276,21 @@ A policy that uses annotations that implement isConfigurerPolicy interface to co
         locator = locator used by factory
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
-        foreach (Generic; tuple(getGenerics!(Z, T)).expand) {
-            debug(annotationScanDebug) pragma(msg, "Found annotation implementing configurer annotation contract ", typeof(Generic), " applying to ", Z, " factory");
-            Generic.configure!(T)(instantiator, locator);
+        alias GenericConfigurerConfigurators = allUDAs!Z;
+        static foreach (index; 0 .. GenericConfigurerConfigurators.length) {
+            static if (isConfiguratorPolicy!(toType!(GenericConfigurerConfigurators[index]), T)) {
+
+                debug(annotationScanDebug) trace(
+                    typeid(Z),
+                    " is annotated with configuration policy ",
+                    typeid(GenericConfigurerConfigurators[index]),
+                    " invoking configure method on it using ",
+                    instantiator,
+                    " and ",
+                    locator
+                );
+                GenericConfigurerConfigurators[index].configure!(T)(instantiator, locator);
+            }
         }
     }
 }
@@ -315,14 +299,6 @@ A policy that uses annotations that implement isConfigurerPolicy interface to co
 A policy that configures factory to use callback to destroy created components.
 **/
 @safe struct CallbackDestructorConfigurerPolicy {
-    private alias getCallbackDestructors(alias T, X) = Filter!(
-        chain!(
-            ApplyRight!(isCallbackDestructor, X),
-            toType
-        ),
-        allUDAs!T
-    );
-
     /**
     Configure instantiator to use callback for destruction of components
 
@@ -332,10 +308,15 @@ A policy that configures factory to use callback to destroy created components.
         Z = type of component created
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
+        auto CallbackDestructors = allUDAs!Z;
+        foreach (index; 0 .. CallbackDestructors.length) {
+            static if (isCallbackDestructor!(CallbackDestructors[index], T)) {
 
-        foreach (CallbackDestructor; tuple!(getCallbackDestructors!(Z, T)).expand) {
-            debug(annotationsScanDebug) pragma(msg, "Found callback destructor for " ~ fullyQualifiedName!Z);
-            instantiator.setInstanceDestructor(callbackDestructor(CallbackDestructor.dg, CallbackDestructor.args));
+                debug(annotationsScanDebug) trace(
+                    typeid(Z), " is annotated with @callbackDestructor callable of ", CallbackDestructors[index].dg, " with arguments of ", CallbackDestructors[index].args
+                );
+                instantiator.setInstanceDestructor(callbackDestructor(CallbackDestructors[index].dg, CallbackDestructors[index].args));
+            }
         }
     }
 }
@@ -432,7 +413,7 @@ Configurator policy that applies field configurator policies on all public metho
     **/
     static void configure(T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
         foreach (member; __traits(allMembers, Z)) {
-            static if (isField!(Z, member) && (getProtection!(Z, member) == "public")) {
+            static if ((getProtection!(Z, member) == "public") && isField!(Z, member)) {
                 foreach (fieldConfigurer; FieldConfiguratorPolicies) {
                     fieldConfigurer.configureField!member(instantiator, locator);
                 }
@@ -458,21 +439,24 @@ Method configurator policy that scans only constructors for @constructor annotat
     static void configureMethod(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
         static if (member == "__ctor") {
-            foreach (overload; __traits(getOverloads, Z, member)) {
+            static foreach (overload; __traits(getOverloads, Z, member)) {{
 
 
-                alias Configurers = Filter!(
-                    isConstructorAnnotation,
-                    allUDAs!(overload)
-                );
+                alias Configurers = allUDAs!overload;
 
-                foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
-                    debug(annotationScanDebug) pragma(msg, "Found elaborate constructor for ", Z, " provisioning with ", toType!Configurer);
-                    instantiator.setInstanceFactory(
-                        constructorBasedFactory!Z(Configurer.args.expand)
-                    );
+                static foreach (index; 0 .. Configurers.length) {
+                    static if (isConstructorAnnotation!(Configurers[index])) {
+
+                        debug(annotationScanDebug) trace(
+                            typeid(Z), " constructor", typeid(Parameters!overload),
+                            " is annotated with @constructor annotation, using it as means to construct component using supplied arguments of ", Configurers[index].args
+                        );
+                        instantiator.setInstanceFactory(
+                            constructorBasedFactory!Z(Configurers[index].args)
+                        );
+                    }
                 }
-            }
+            }}
         }
     }
 }
@@ -494,21 +478,24 @@ Method policy that scans constructors for @autowired annotation to use them to c
     static void configureMethod(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
         static if (member == "__ctor") {
-            foreach (overload; __traits(getOverloads, Z, member)) {
+            foreach (overload; __traits(getOverloads, Z, member)) {{
 
-                alias Configurers = Filter!(
-                    isAutowiredAnnotation,
-                    allUDAs!(overload)
-                );
+                alias Configurers = allUDAs!overload;
 
-                foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
-                    debug(annotationScanDebug) pragma(msg, "Autowiring constructor of ", Z, " with arguments ", Parameters!(overload));
+                static foreach (index; 0 .. Configurers.length) {
+                    static if (isAutowiredAnnotation!(Configurers[index])) {
+                        auto references = makeFunctionParameterReferences!overload.expand;
+                        debug(annotationScanDebug) trace(
+                            typeid(Z), " constructor", typeid(Parameters!(overload)),
+                            " is annotated with @autowired annotation, constructing component using this constructor with arguments of ", references
+                        );
 
-                    instantiator.setInstanceFactory(
-                        constructorBasedFactory!Z(makeAutowireReferences!overload.expand)
-                    );
+                        instantiator.setInstanceFactory(
+                            constructorBasedFactory!Z(references)
+                        );
+                    }
                 }
-            }
+            }}
         }
     }
 }
@@ -529,14 +516,17 @@ Field configurator policy that will set a field annotated @setter annotation to 
     **/
     static void configureField(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
-        alias Configurers = Filter!(
-            isSetterAnnotation,
-            allUDAs!(__traits(getMember, Z, member))
-        );
+        alias Configurers = allUDAs!(__traits(getMember, Z, member));
 
-        foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
-            debug(annotationScanDebug) pragma(msg, "Setting field ", member, " of ", Z, " to ", staticMap!(toType, Configurer.args.expand));
-            instantiator.addPropertyConfigurer(fieldConfigurer!(member, Z)(Configurer.args.expand));
+        static foreach (index; 0 .. Configurers.length) {
+            static if (isSetterAnnotation!(Configurers[index])) {
+
+                debug(annotationScanDebug) trace(
+                    typeid(Z), ".", member,
+                    " field is marked with @setter annotation. Using it to confiugre component with provided arguments of ", Configurers[index].args
+                );
+                instantiator.addPropertyConfigurer(fieldConfigurer!(member, Z)(Configurers[index].args));
+            }
         }
     }
 }
@@ -557,14 +547,17 @@ Field configurator policy that will set a field to value returned by a callback 
     **/
     static void configureField(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
-        alias Callbacks = Filter!(
-            isCallbackConfigurerAnnotation,
-            allUDAs!(__traits(getMember, Z, member))
-        );
+        alias Callbacks = allUDAs!(__traits(getMember, Z, member));
 
-        foreach (Callback; tuple(staticMap!(toValue, Callbacks))) {
-            debug(annotationScanDebug) pragma(msg, "Calling callback on field ", member, " of ", Z, " to ", staticMap!(toType, Callback.args.expand));
-            instantiator.addPropertyConfigurer(callbackConfigurer!Z(Callback.dg, Callback.args.expand));
+        static foreach (index; 0 .. Callbacks.length) {
+            static if (isCallbackConfigurerAnnotation!(toType!(Callbacks[index]))) {
+
+                debug(annotationScanDebug) trace(
+                    typeid(Z), ".", member, " field is annotated with @callback annotation, using callback",
+                    Callbacks[index].dg, " with ", Callbacks[index].args, " to inject field with data."
+                );
+                instantiator.addPropertyConfigurer(callbackConfigurer!Z(Callbacks[index].dg, Callbacks[index].args));
+            }
         }
     }
 }
@@ -584,29 +577,22 @@ Field configurator policy that will try to inject a dependency that matches fiel
         locator = locator for component dependencies
     **/
     static void configureField(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
-        alias field = AliasSeq!(__traits(getMember, Z, member));
+        alias field = Alias!(__traits(getMember, Z, member));
 
-        alias Callbacks = Filter!(
-            isAutowiredAnnotation,
-            allUDAs!(field)
-        );
+        alias Callbacks = allUDAs!field;
 
-        foreach (Callback; tuple(staticMap!(toValue, Callbacks))) {
-            debug(annotationScanDebug) pragma(msg, "Autowiring field ", member, " of ", Z, " to ", typeof(getMember!(Z, member)));
+        static foreach (index; 0 .. Callbacks.length) {{
+            static if (isAutowiredAnnotation!(Callbacks[index])) {
 
-            RuntimeReference reference = __traits(identifier, field).lref.alternate(lref!(typeof(field)));
+                RuntimeReference reference;
 
-            alias qualifiers = Filter!(
-                isQualifierAnnotation,
-                allUDAs!(field)
-            );
+                mixin(transformToReference("reference", "field"));
 
-            static foreach (qualifier; qualifiers) {
-                reference = qualifier.id.lref.alternate(reference);
+                debug(annotationScanDebug) trace(typeid(Z), ".", member, " field is annotated with @autowired annotation, injecting it with ", reference);
+
+                instantiator.addPropertyConfigurer(fieldConfigurer!(member, Z)(reference));
             }
-
-            instantiator.addPropertyConfigurer(fieldConfigurer!(member, Z)(reference));
-        }
+        }}
     }
 }
 
@@ -626,18 +612,17 @@ Method configurator policy that will call a method with resolved arguments from 
     **/
     static void configureMethod(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
-        foreach (overload; __traits(getOverloads, Z, member)) {
+        static foreach (overload; __traits(getOverloads, Z, member)) {{
 
-            alias Configurers = Filter!(
-                isSetterAnnotation,
-                allUDAs!(overload)
-            );
+            alias Configurers = allUDAs!overload;
 
-            foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
-                debug(annotationScanDebug) pragma(msg, "Calling method ", member, " of ", Z, " with ", staticMap!(toType, Configurer.args.expand));
-                instantiator.addPropertyConfigurer(methodConfigurer!(member, Z)(Configurer.args.expand));
+            static foreach (index; 0 .. Configurers.length) {
+                static if (isSetterAnnotation!(Configurers[index])) {
+                    debug(annotationScanDebug) trace(typeid(Z), ".", member, " method is marked with @setter annotation, injecting it with ", Configurers[index].args);
+                    instantiator.addPropertyConfigurer(methodConfigurer!(member, Z)(Configurers[index].args));
+                }
             }
-        }
+        }}
     }
 }
 
@@ -657,18 +642,18 @@ Method configurator policy that will call callback from @callback annotated meth
     **/
     static void configureMethod(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
 
-        foreach (overload; __traits(getOverloads, Z, member)) {
+        static foreach (overload; __traits(getOverloads, Z, member)) {{
 
-            alias Configurers = Filter!(
-                isCallbackConfigurerAnnotation,
-                allUDAs!(overload)
-            );
+            alias Configurers = allUDAs!overload;
 
-            foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
-                debug(annotationScanDebug) pragma(msg, "Calling callback on method ", member, " of ", Z, " with ", staticMap!(toType, Configurer.args.expand));
-                instantiator.addPropertyConfigurer(callbackConfigurer!Z(Configurer.dg, Configurer.args.expand));
+            static foreach (index; 0 .. Configurers.length) {
+                static if (isCallbackConfigurerAnnotation!(toType!(Configurers[index]))) {
+
+                    debug(annotationScanDebug) trace(typeid(Z), ".", member, " method is marked with @callback annotation, using callback", Configurers[index].dg, " with ", Configurers[index].args, " to configure component.");
+                    instantiator.addPropertyConfigurer(callbackConfigurer!Z(Configurers[index].dg, Configurers[index].args));
+                }
             }
-        }
+        }}
     }
 }
 
@@ -688,20 +673,20 @@ Method configurator policy that will call method annotated with @autowire with a
     **/
     static void configureMethod(string member, T : GenericFactory!Z, Z)(T instantiator, Locator!() locator) {
         static if (member != "__ctor") {
-            foreach (overload; __traits(getOverloads, Z, member)) {
+            static foreach (overload; __traits(getOverloads, Z, member)) {{
 
-                alias Configurers = Filter!(
-                    isAutowiredAnnotation,
-                    allUDAs!(overload)
-                );
+                alias Configurers = allUDAs!overload;
 
-                foreach (Configurer; tuple(staticMap!(toValue, Configurers))) {
+                static foreach (index; 0 .. Configurers.length) {
+                    static if (isAutowiredAnnotation!(Configurers[index])) {
+                        auto references = makeFunctionParameterReferences!overload.expand;
 
-                    debug(annotationScanDebug) pragma(msg, "Calling method ", member, " of ", Z, " with autowired ", Parameters!overload);
+                        debug(annotationScanDebug) trace(typeid(Z), ".", member, " method is marked with @autowired annotation, injecting it with ", references);
 
-                    instantiator.addPropertyConfigurer(methodConfigurer!(member, Z)(makeAutowireReferences!overload.expand));
+                        instantiator.addPropertyConfigurer(methodConfigurer!(member, Z)(references));
+                    }
                 }
-            }
+            }}
         }
     }
 }
@@ -816,18 +801,94 @@ Returns:
 enum bool isComponentStoringPolicy(T, X = Object) =
     is(T == struct) &&
     is(
-        typeof(&T.store!X) : void function (F, Locator!(), S),
+        typeof(&T.store!X) : ComponentStoringResult function (F, Locator!(), S),
         F : Factory!Z,
         Z,
         S : Storage!(Factory!Z, string)
     );
 
+/**
+Check if T implements identity resolver interface.
+
+The responsibility of identity resolver policy is to
+find an identity for component that is to be stored based
+on information provided on passed type.
+
+Params:
+    T = type that is tested for interface compliance
+    X = component type against which T's templates are tested to comply to interface
+Returns:
+    true if it implements the interface, false otherwise
+**/
+enum bool isIdentityResolverPolicy(T, X = Object) =
+    is(T == struct) &&
+    is(
+        typeof(&T.resolve!X) : string function (F),
+        F : Factory!Z,
+        Z
+    );
+
+/**
+Check if T implements storage resolver interface.
+
+The responsibility of storage resolver policy is to
+find a storage for component which will store component
+based on information provided on passed type.
+
+Params:
+    T = type that is tested for interface compliance
+    X = component type against which T's templates are tested to comply to interface
+Returns:
+    true if it implements the interface, false otherwise
+**/
+enum bool isStorageLocatorPolicy(T, X = Object) =
+    is(T == struct) &&
+    is(
+        typeof(&T.search!X) : Storage!(Factory!Z, string) function (F, Locator!(), S),
+        F : Factory!Z,
+        Z,
+        S : Storage!(Factory!Z, string)
+    );
+
+/**
+Check if T implements identity aliasing interface.
+
+The responsibility of identity aliasing policy is to
+find aliases of component's identity that should be registered
+in component storage.
+
+Params:
+    T = type that is tested for interface compliance
+    X = component type against which T's templates are tested to comply to interface
+Returns:
+    true if it implements the interface, false otherwise
+**/
+enum bool isAliasingPolicy(T, X = Object) =
+    is(T == struct) &&
+    is(
+        typeof(&T.link!X) : void function (string, AliasAware!string)
+    );
+
+/**
+Result of storing a component into a storage.
+**/
+struct ComponentStoringResult {
+
+    /**
+    Primary identity of stored component
+    **/
+    string identity;
+
+    /**
+    Storage where it was stored.
+    **/
+    Storage!(ObjectFactory, string) storage;
+}
 
 /**
 A default implementation of component storing policy that looks for @qualifier and @contained annotations to store component factory.
 **/
-@safe struct ComponentStoringPolicyImpl {
-
+@safe struct ComponentStoringPolicy(IdentityResolverPolicy, StorageResolvingPolicy, AliasingPolicyImpl) {
     /**
     Store component factory into storage.
 
@@ -841,38 +902,407 @@ A default implementation of component storing policy that looks for @qualifier a
         locator = locator that is used to fetch storage in case of @contained annotation
         storage = storage were component is stored when no @contained annotation is provided
     **/
-    static void store(T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
+    static ComponentStoringResult store(alias T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
 
-        string identity = fullyQualifiedName!T;
-        alias Qualifiers = Filter!(
-            isQualifierAnnotation,
-            allUDAs!T
-        );
+        string identity = IdentityResolverPolicy.resolve!T(factory);
 
-        foreach (Qualifier; Qualifiers) {
-            debug(annotationScanDebug) pragma(msg, "Found custom identity for ", fullyQualifiedName!T, " ", Qualifier.id);
-            identity = Qualifier.id;
+        auto destinationStorage = StorageResolvingPolicy.search!T(factory, locator, storage);
+
+        if ((identity !is null) && (destinationStorage !is null)) {
+            destinationStorage.set(factory, identity);
+
+            AliasAware!string aliasingContainer = (() @trusted => cast(AliasAware!string) destinationStorage)();
+            if (aliasingContainer !is null) {
+                AliasingPolicyImpl.link!T(identity, aliasingContainer);
+            }
+
+            return ComponentStoringResult(identity, destinationStorage);
         }
 
-        alias ContainedAnnotations = Filter!(
-            isContainedAnnotation,
-            allUDAs!T
-        );
 
-        foreach (ContainedAnnotation; ContainedAnnotations) {
-            debug(annotationScanDebug) pragma(msg, "Found custom storage to be used to store component ", fullyQualifiedName!T, " ", ContainedAnnotation.id);
-            storage = locator.locate!(Storage!(Factory!Object, string))(ContainedAnnotation.id);
-        }
-
-        storage.set(factory, identity);
+        return ComponentStoringResult.init;
     }
 }
+
+/**
+A implementation that will chain several storing policies, triggerring multiple registrations of same component.
+**/
+@safe struct ChainedComponentStoringPolicy(ComponentStoringPolicies...)
+    if (allSatisfy!(isComponentStoringPolicy, ComponentStoringPolicies)) {
+
+    /**
+    Store component factory into multiple storages by using multiple policies.
+
+    Params:
+        factory = component factory to be stored
+        locator = locator that is used to fetch storage in case of @contained annotation
+        storage = storage were component is stored when no @contained annotation is provided
+    **/
+    static ComponentStoringResult store(alias T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
+        ComponentStoringResult result;
+        foreach (ComponentStoringPolicy; ComponentStoringPolicies) {
+            result = ComponentStoringPolicy.store!T(factory, locator, storage);
+
+            if (result !is ComponentStoringResult.init) {
+                break;
+            }
+        }
+
+        return result;
+    }
+}
+
+/**
+Default implementation of storage policy used by adders.
+**/
+alias ComponentStoringPolicyImpl = ComponentStoringPolicy!(
+    IdentityResolverPolicyImpl,
+    StorageLocatorPolicyImpl,
+    AliasingPolicyImpl
+);
+
+/**
+Qualifier implementation of aliasing policy.
+**/
+@safe struct QualifiedAnnotationAliasingPolicy {
+
+    /**
+    Alias an identity in a aliasing container based on qualifier annotations on component.
+
+    Params:
+        identity = main identity of component registered in aliased container.
+        aliasingContainer = container that is keeping aliasing information.
+    **/
+    static void link(alias T)(string identity, AliasAware!string aliasingContainer) {
+
+        alias Qualifiers = allUDAs!T;
+        static foreach (index; 0 .. Qualifiers.length) {
+            static if (isQualifierAnnotation!(Qualifiers[index])) {
+                if (identity != Qualifiers[index].id) {
+                    debug(annotationScanDebug) trace(
+                        fullyQualifiedName!T, " is marked with @qualifier annotation, aliasing identitity ",
+                        identity, " of component to ", Qualifiers[index].id
+                    );
+
+                    aliasingContainer.link(identity, Qualifiers[index].id);
+                }
+            }
+        }
+    }
+}
+
+/**
+By identifier implementation of aliasing policy.
+**/
+@safe struct IdentifierAliasingPolicy {
+
+    /**
+    Alias an identity in a aliasing container based on it's identifier.
+
+    Params:
+        identity = main identity of component registered in aliased container.
+        aliasingContainer = container that is keeping aliasing information.
+    **/
+    static void link(alias T)(string identity, AliasAware!string aliasingContainer) {
+
+        static if (is(typeof(__traits(identifier, T)))) {
+            static immutable identifier = __traits(identifier, T);
+            if (identifier != identity) {
+                debug(annotationScanDebug) trace(
+                    fullyQualifiedName!T, " has identifier of ", identifier, ", aliasing it to identitity of ", identity
+                );
+
+                aliasingContainer.link(identity, identifier[]);
+            }
+        }
+    }
+}
+
+/**
+By type implementation of aliasing policy.
+**/
+@safe struct TypeAliasingPolicy {
+
+    /**
+    Alias an identity in a aliasing container based on type of component.
+
+    Params:
+        identity = main identity of component registered in aliased container.
+        aliasingContainer = container that is keeping aliasing information.
+    **/
+    static void link(alias T)(string identity, AliasAware!string aliasingContainer) {
+
+        static if (is(typeof({ auto test = typeid(T); }))) {
+
+            if (typeid(T).toString != identity) {
+                debug(annotationScanDebug) trace(
+                    typeid(T), " has identity ", identity, " which is not FQN of component, aliasing it to ", typeid(T), " of component using typeid"
+                );
+                aliasingContainer.link(identity, typeid(T).toString);
+            }
+
+            if ((typeid(T).toString != fullyQualifiedName!T) && (fullyQualifiedName!T != identity)) {
+                debug(annotationScanDebug) trace(
+                    typeid(T), " has identity ", identity, " which is not FQN of component, aliasing it to ", typeid(T), " of component using fullyQualifiedName"
+                );
+                aliasingContainer.link(identity, fullyQualifiedName!T);
+            }
+        }
+    }
+}
+
+/**
+Chaining implementation of aliasing policy, calling other passed policies.
+**/
+@safe struct ChainedAliasingPolicy(Policies...)
+    if (allSatisfy!(isAliasingPolicy, Policies)) {
+
+    /**
+    Alias an identity in a aliasing container using aliasing policies passed to this policy.
+
+    Params:
+        identity = main identity of component registered in aliased container.
+        aliasingContainer = container that is keeping aliasing information.
+    **/
+    static void link(alias T)(string identity, AliasAware!string aliasingContainer) {
+        static foreach (Policy; Policies) {
+            Policy.link!T(identity, aliasingContainer);
+        }
+    }
+}
+
+/**
+Default configuration of aliasing policy
+**/
+alias AliasingPolicyImpl = ChainedAliasingPolicy!(
+    QualifiedAnnotationAliasingPolicy,
+    IdentifierAliasingPolicy,
+    TypeAliasingPolicy
+);
+
+/**
+A implementation storage locator policy that searches for storage of component based on @contained annotation
+**/
+@safe struct ContainedAnnotationStorageLocatorPolicy {
+
+    /**
+    Find a storge in locator based upon @contained annotation
+
+    Params:
+        factory = component factory to be stored
+        locator = locator that is used to fetch storage in case of @contained annotation is present
+        storage = default storage
+    **/
+    static Storage!(Factory!Object, string) search(alias T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
+        string id;
+
+        alias ContainedAnnotations = allUDAs!T;
+        static foreach (index; 0 .. ContainedAnnotations.length) {
+            static if (isContainedAnnotation!(ContainedAnnotations[index])) {
+
+                if (locator.has(ContainedAnnotations[index].id)) {
+                    debug(annotationScanDebug) trace(
+                        typeid(T), " is marked with custom @contained annotation, using storage identified by ",
+                        ContainedAnnotations[index].id, " to store component factory"
+                    );
+                    id = ContainedAnnotations[index].id;
+                }
+            }
+        }
+
+        if (id !is null) {
+            return locator.locate!(Storage!(Factory!Object, string))(id);
+        }
+
+        return null;
+    }
+}
+
+/**
+A implementation storage locator policy that will return default storage for component which is passed as argument to search.
+**/
+@safe struct DefaultStorageLocatorPolicy {
+
+    /**
+    Find a storge in locator based upon @contained annotation
+
+    Params:
+        factory = component factory to be stored
+        locator = locator that is used to fetch storage in case of @contained annotation
+        storage = default storage
+    **/
+    static Storage!(Factory!Object, string) search(alias T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
+
+        return storage;
+    }
+}
+
+/**
+A implementation storage locator policy that will apply other policies in chain until one provides a storage for storing data.
+**/
+@safe struct ChainedStorageLocatorPolicy(StorageLocatorPolicies...)
+    if (allSatisfy!(isStorageLocatorPolicy, StorageLocatorPolicies)) {
+
+    /**
+    Get default storage for component.
+
+    Params:
+        factory = component factory to be stored
+        locator = locator that is used to fetch storage in case of @contained annotation
+        storage = default storage
+    **/
+    static Storage!(Factory!Object, string) search(alias T)(Factory!Object factory, Locator!() locator, Storage!(Factory!Object, string) storage) {
+
+        static foreach (StorageLocatorPolicy; StorageLocatorPolicies) {{
+            auto destination = StorageLocatorPolicy.search!T(factory, locator, storage);
+
+            if (destination !is null) {
+                return destination;
+            }
+        }}
+
+        return null;
+    }
+}
+
+/**
+Default policy implementation for searching of storage for component
+**/
+alias StorageLocatorPolicyImpl = ChainedStorageLocatorPolicy!(
+    ContainedAnnotationStorageLocatorPolicy,
+    DefaultStorageLocatorPolicy
+);
+
+/**
+A policy for resolving identity of component by annotation.
+**/
+@safe struct QualifiedAnnotationIdentityResolverPolicy {
+
+    /**
+    Resolve identity of component by qualified annotations on it.
+
+    The first qualified annotation is returned from list of annotations. If no annotations
+    are on the component T, null is returned.
+
+    Params:
+        factory = component factory to be stored
+
+    Returns:
+        identity of component based on annotation or null.
+    **/
+    static string resolve(alias T)(Factory!Object factory) {
+        string identity;
+
+        alias Qualifiers = allUDAs!T;
+        static foreach (index; 0 .. Qualifiers.length) {{
+            static if (isQualifierAnnotation!(Qualifiers[index])) {
+                debug(annotationScanDebug) trace(
+                    fullyQualifiedName!T, " is marked with @qualifier annotation, using ", Qualifiers[index].id, " as main identity for component."
+                );
+                identity = Qualifiers[index].id;
+                break;
+            }
+        }}
+
+        return identity;
+    }
+}
+
+/**
+A policy for resolving identity of component by it's type.
+**/
+@safe struct TypeIdentityResolverPolicy {
+
+    /**
+    Resolve identity of component by FQN of it's type.
+
+    Params:
+        factory = component factory to be stored
+
+    Returns:
+        FQN of component type as it's identity.
+    **/
+    static string resolve(alias T)(Factory!Object factory) {
+
+        debug(annotationScanDebug) trace(
+            fullyQualifiedName!T, " has no custom identities, using it's type FQN as main identity."
+        );
+        return fullyQualifiedName!T;
+    }
+}
+
+/**
+A policy for resolving identity of component by it's identifier.
+**/
+@safe struct IdentifierBasedIdentityResolverPolicy {
+
+    /**
+    Resolve identity of component by identifier attached to it.
+
+    Params:
+        factory = component factory to be stored
+
+    Returns:
+        identifier as identity of component or null.
+    **/
+    static string resolve(alias T)(Factory!Object factory) {
+
+        static if (is(typeof(__traits(identifier, T)))) {
+            static immutable string identifier = __traits(identifier, T);
+            debug(annotationScanDebug) trace(
+                fullyQualifiedName!T, " has identifier ", identifier, " using it as main identity for component."
+            );
+
+            return identifier;
+        } else {
+
+            return null;
+        }
+    }
+}
+
+/**
+A policy for resolving identity of component by applying other components in chain.
+**/
+@safe struct ChainedIdentityResolverPolicy(IdentityResolverPolicies...)
+    if (allSatisfy!(isIdentityResolverPolicy, IdentityResolverPolicies)) {
+
+    /**
+    Resolve identity of component by FQN of it's type.
+
+    Params:
+        factory = component factory to be stored
+
+    Returns:
+        FQN of component type as it's identity.
+    **/
+    static string resolve(alias T)(Factory!Object factory) {
+
+        static foreach (IdentityResolverPolicy; IdentityResolverPolicies) {{
+            string identity = IdentityResolverPolicy.resolve!T(factory);
+
+            if (identity !is null) {
+                return identity;
+            }
+        }}
+
+        return null;
+    }
+}
+
+/**
+Default implementation of identity resolving policy
+**/
+alias IdentityResolverPolicyImpl = ChainedIdentityResolverPolicy!(
+    QualifiedAnnotationIdentityResolverPolicy,
+    TypeIdentityResolverPolicy
+);
 
 /**
 ContainerAdder that chains a set of ContainerAdders on a symbol.
 **/
 @safe struct ChainedContainerAdder(ContainerAdderPolicies...) {
-    import aermicioi.util.traits;
+    import aermicioi.aedi.util.traits : getMember;
 
     /**
     Check if at least one ContainerAdder supports passed symbol
@@ -895,7 +1325,6 @@ ContainerAdder that chains a set of ContainerAdders on a symbol.
     static void scan(alias T)(Locator!() locator, Storage!(ObjectFactory, string) storage)
         if (isSupported!T) {
         foreach (ContainerAdderPolicy; ContainerAdderPolicies) {
-
             static if (ContainerAdderPolicy.isSupported!T) {
                 ContainerAdderPolicy.scan!T(locator, storage);
             }
@@ -981,7 +1410,7 @@ ContainerAdder that scans a type for inner static types, to transform and store 
 ContainerAdder that will scan a module for it's members, to transform into component factories and add them into a storage
 **/
 @safe struct ModuleContainerAdder(ContainerAdderPolicy) {
-
+    import std.algorithm : startsWith;
     /**
     Check if T symbol is a module.
 
@@ -991,7 +1420,7 @@ ContainerAdder that will scan a module for it's members, to transform into compo
     Returns:
         true if it is a module, false otherwise
     **/
-    enum bool isSupported(alias T) = is(typeof({mixin("import " ~ fullyQualifiedName!T ~ ";");}));
+    enum bool isSupported(alias T) = T.stringof.startsWith("module");
 
     /**
     Scan module T, transform it's members into component factories, and store them into storage.
@@ -1006,7 +1435,6 @@ ContainerAdder that will scan a module for it's members, to transform into compo
 
         foreach (member; __traits(allMembers, T)) {
             static if (isPublic!(T, member) && is(Alias!(__traits(getMember, T, member)))) {
-
                 ContainerAdderPolicy.scan!(getMember!(T, member))(locator, storage);
             }
         }
@@ -1014,13 +1442,59 @@ ContainerAdder that will scan a module for it's members, to transform into compo
 }
 
 /**
-ContainerAdder that will scan a type for it's methods, and use them to create component factories out of their return type
+ContainerAdder that will ignore specific packages.
+
+Params:
+    pack = package that will be ignored.
+    ContainerAdderPolicy = policy run on not ignored packages.
 **/
-@safe struct FactoryMethodContainerAdder(ComponentStoringPolicy = ComponentStoringPolicyImpl)
-    if (isComponentStoringPolicy!ComponentStoringPolicy) {
+@safe struct IgnoringContainerAdder(string pack, ContainerAdderPolicy) {
+    import std.algorithm : startsWith;
+    import std.traits : packageName;
+    /**
+    Check if T symbol is a module.
+
+    Params:
+        T = symbol to be tested
+
+    Returns:
+        true if it is a module, false otherwise
+    **/
+    enum bool isSupported(alias T) = !packageName!T.startsWith(pack) && ContainerAdderPolicy.isSupported!T;
 
     /**
-    Check if symbol T is a type
+    Scan T if it is not in ignored package.
+
+    Params:
+        T = module that is scanned
+        locator = locator of components used by transformed component factories
+        storage = storage which will contain component factories
+    **/
+    static void scan(alias T)(Locator!() locator, Storage!(ObjectFactory, string) storage)
+        if (isSupported!T) {
+        ContainerAdderPolicy.scan!T(locator, storage);
+    }
+}
+
+/**
+ContainerAdder that will scan a type for it's methods, and use them to create component factories out of their return type
+**/
+@safe struct FactoryMethodContainerAdder(
+    ByTypeComponentStoringPolicy = ComponentStoringPolicyImpl,
+    ByMethodComponentStoringPolicy = ComponentStoringPolicy!(
+        ChainedIdentityResolverPolicy!(
+            QualifiedAnnotationIdentityResolverPolicy,
+            IdentifierBasedIdentityResolverPolicy
+        ),
+        StorageLocatorPolicyImpl,
+        AliasingPolicyImpl
+    ),
+    ByTypeAliasingPolicy = TypeAliasingPolicy
+) if (isComponentStoringPolicy!ByTypeComponentStoringPolicy && isComponentStoringPolicy!ByMethodComponentStoringPolicy && isAliasingPolicy!ByTypeAliasingPolicy) {
+    import std.algorithm : startsWith;
+
+    /**
+    Check if symbol T is a type or module
 
     Params:
         T = symbol to be tested
@@ -1028,7 +1502,17 @@ ContainerAdder that will scan a type for it's methods, and use them to create co
     Returns:
         true if it is a type, false otherwise
     **/
-    enum bool isSupported(alias T) = is(T);
+    enum bool isSupported(alias T) = isModule!T || isType!T;
+
+    /**
+    ditto
+    **/
+    enum bool isModule(alias T) = T.stringof.startsWith("module");
+
+    /**
+    ditto
+    **/
+    enum bool isType(alias T) = is(T);
 
     /**
     Scan T's methods, for methods annotated with @component annotation, transform them into component factories
@@ -1042,43 +1526,58 @@ ContainerAdder that will scan a type for it's methods, and use them to create co
     static void scan(alias T)(Locator!() locator, Storage!(ObjectFactory, string) storage)
         if (isSupported!T) {
 
-        foreach (member; __traits(allMembers, T)) {
+        static foreach (member; __traits(allMembers, T)) {{
             static if (isPublic!(T, member) && isSomeFunction!(__traits(getMember, T, member))) {
 
-                foreach (overload; __traits(getOverloads, T, member)) {
+                static foreach (overload; __traits(getOverloads, T, member)) {{
 
-                    alias FactoryMethods = Filter!(
-                        isComponentAnnotation,
-                        allUDAs!overload
-                    );
+                    alias FactoryMethods = allUDAs!overload;
 
-                    foreach (FactoryMethod; FactoryMethods) {
-                        debug(annotationScanDebug) pragma(msg, "Found factory method ", member, " on component ", T);
-                        auto factory = new WrappingFactory!(GenericFactoryImpl!(ReturnType!overload))(
-                            new GenericFactoryImpl!(ReturnType!overload)(locator)
-                        );
+                    static foreach (index; 0 .. FactoryMethods.length) {{
+                        static if (isComponentAnnotation!(FactoryMethods[index])) {
+                            auto factory = new WrappingFactory!(GenericFactoryImpl!(ReturnType!overload))(
+                                new GenericFactoryImpl!(ReturnType!overload)(locator)
+                            );
 
-                        if (factory !is null) {
-                            static if (__traits(isStaticFunction, overload)) {
-                                auto instanceFactory = factoryMethodBasedFactory!(T, member)(makeAutowireReferences!overload.expand);
-                            } else {
-                                auto instanceFactory = factoryMethodBasedFactory!(T, member)(lref!T, makeAutowireReferences!overload.expand);
+                            if (factory !is null) {
+                                auto params = makeFunctionParameterReferences!overload.expand;
+
+                                debug(annotationScanDebug) trace(fullyQualifiedName!T, ".", member, " is annotated with @component annotation, using it as constructor for component with args ", params);
+                                static if (isModule!T) {
+                                    auto instanceFactory = functionInstanceFactory(&overload, params);
+                                } else static if (__traits(isStaticFunction, overload)) {
+                                    auto instanceFactory = factoryMethodBasedFactory!(T, member)(params);
+                                } else {
+                                    auto instanceFactory = factoryMethodBasedFactory!(T, member)(lref!T, params);
+                                }
+
+                                import aermicioi.aedi.storage.decorator : Decorator;
+
+                                static if (is(typeof(factory) : Decorator!X, X : GenericFactory!Z, Z)) {
+                                    factory.decorated.setInstanceFactory = instanceFactory;
+                                } else static if (is(typeof(factory) : GenericFactory!Z, Z) && !is(Z == Object)) {
+                                    factory.setInstanceFactory = instanceFactory;
+                                }
+
+                                ComponentStoringResult result;
+                                result = ByMethodComponentStoringPolicy.store!overload(factory, locator, storage);
+
+                                if (result !is ComponentStoringResult.init) {
+                                    AliasAware!string container = (delegate AliasAware!string () @trusted => cast(AliasAware!string) result.storage)();
+
+                                    if (container !is null) {
+                                        ByTypeAliasingPolicy.link!(ReturnType!overload)(result.identity, container);
+                                    }
+                                } else {
+
+                                    ByTypeComponentStoringPolicy.store!(ReturnType!overload)(factory, locator, storage);
+                                }
                             }
-
-                            import aermicioi.aedi.storage.decorator : Decorator;
-
-                            static if (is(typeof(factory) : Decorator!X, X : GenericFactory!Z, Z)) {
-                                factory.decorated.setInstanceFactory = instanceFactory;
-                            } else static if (is(typeof(factory) : GenericFactory!Z, Z) && !is(Z == Object)) {
-                                factory.setInstanceFactory = instanceFactory;
-                            }
-
-                            ComponentStoringPolicy.store!(ReturnType!overload)(factory, locator, storage);
                         }
-                    }
-                }
+                    }}
+                }}
             }
-        }
+        }}
     }
 }
 
@@ -1142,10 +1641,12 @@ alias ObjectFactoryTransformerImpl =
 Implementation of module container adder, featuring built in scanners
 **/
 alias ModuleContainerAdderImpl(TransformerPolicy = ObjectFactoryTransformerImpl) = ModuleContainerAdder!(
-        ChainedContainerAdder!(
-            TypeContainerAdder!TransformerPolicy,
-            InnerTypeContainerAdder!(TypeContainerAdder!TransformerPolicy),
-            FactoryMethodContainerAdder!(),
+        IgnoringContainerAdder!("std",
+            ChainedContainerAdder!(
+                IgnoringContainerAdder!("std", TypeContainerAdder!TransformerPolicy),
+                IgnoringContainerAdder!("std", InnerTypeContainerAdder!(TypeContainerAdder!TransformerPolicy)),
+                IgnoringContainerAdder!("std", FactoryMethodContainerAdder!()),
+            )
         )
     );
 
@@ -1153,9 +1654,9 @@ alias ModuleContainerAdderImpl(TransformerPolicy = ObjectFactoryTransformerImpl)
 Customizable implementation of container adder, with built in functionality
 **/
 alias ContainerAdderImpl(TransformerPolicy = ObjectFactoryTransformerImpl) = ChainedContainerAdder!(
-        TypeContainerAdder!TransformerPolicy,
-        InnerTypeContainerAdder!(TypeContainerAdder!TransformerPolicy),
-        FactoryMethodContainerAdder!(),
+        IgnoringContainerAdder!("std", TypeContainerAdder!TransformerPolicy),
+        IgnoringContainerAdder!("std", InnerTypeContainerAdder!(TypeContainerAdder!TransformerPolicy)),
+        IgnoringContainerAdder!("std", FactoryMethodContainerAdder!()),
         ModuleContainerAdderImpl!TransformerPolicy
     );
 
@@ -1177,7 +1678,7 @@ set of scanning methods in case when additional scanning and transformation logi
         locator = locator of components used to by component factories
     **/
     void scan(alias T)(Storage!(ObjectFactory, string) storage, Locator!() locator) {
-        debug(annotationScanDebug) pragma(msg, "Scanning ", fullyQualifiedName!T, " for possible components");
+        debug(annotationScanDebug) trace(fullyQualifiedName!T, " will be scanned for possible components.");
 
         ContainerAdderPolicy.scan!T(locator, storage);
     }
@@ -1268,32 +1769,59 @@ private template allUDAs(alias symbol) {
 }
 
 private template toValue(T) {
-    enum auto toValue = T();
+    enum toValue = T();
 }
 
 private template toValue(alias T) {
-    alias toValue = T;
+     alias toValue = T;
 }
 
-private auto makeAutowireReferences(alias overload)() {
+/**
+A small utility function that will resolve method arguments using a locator and look also for annotations on arguments.
 
-    Repeat!(Parameters!overload.length, RuntimeReference) arguments;
+Params:
+    locator = locator used to prepare list of arguments for function
+    overload = function for which to prepare arguments. The func itself must not be an overloaded set of functions.
+    args = list of args that should override existing references by type of argument.
 
-    static foreach (index, argument; arguments) {{
-        argument = ParameterIdentifierTuple!overload[index].lref.alternate(
-            lref!(Parameters!overload[index])
-        );
+Returns:
+    a tuple with all required arguments prefilled.
+**/
+auto prepare(alias overload, Args...)(Locator!() locator, out Parameters!overload parameters, Args args) {
+    import std.traits : FunctionTypeOf;
 
-        static if (is(FunctionTypeOf!overload params == __parameters)) {
-
-            static foreach (qualifier; Filter!(
-                isQualifierAnnotation,
-                __traits(getAttributes, params[index .. index + 1])
-            )) {
-                argument = qualifier.id.lref.alternate(argument);
-            }
+    auto references = makeFunctionParameterReferences!(overload)().expand;
+    static foreach (index, arg; parameters) {
+        static if (is(Args[index] == typeof(arg))) {
+            arg = args[index];
+        } else {
+            arg = references[index].resolve!(typeof(arg))(locator);
         }
-    }}
+    }
+}
 
-    return tuple(arguments);
+private alias makeFunctionParameterReferences(alias FunctionType) = aermicioi.aedi.factory.reference.makeFunctionParameterReferences!(FunctionType, transformToReference);
+
+auto transformToReference(string reference, string symbol) {
+    import aermicioi.aedi.factory.reference : transformToBasic = transformToReference;
+    import std.range : chain, only, enumerate;
+    import std.algorithm : joiner, map, substitute;
+    import std.array : array;
+    import std.utf : byChar;
+
+    string delegate (string) toTypeGen = (s) => "toType!(" ~ s ~ ")";
+    string delegate (string, string) typeEnforcedRefGen = (t, s) => "typeEnforcedRef!(" ~ toTypeGen(t) ~ ")(" ~ s ~ ")";
+    string delegate (string) lrefGen = (s) => s ~ ".lref";
+    string delegate (string, string) alternateGen = (f, s) => f ~ ".alternate(" ~ s ~ ")";
+
+    return transformToBasic(reference, symbol) ~ "
+                import std.meta : Filter;
+                import aermicioi.aedi.configurer.annotation.annotation : isQualifierAnnotation;
+                static foreach (qualifier; Filter!(
+                    isQualifierAnnotation,
+                    __traits(getAttributes, " ~ symbol ~ ")
+                )) {
+                    " ~ reference ~ " = " ~ alternateGen(typeEnforcedRefGen(symbol, lrefGen("qualifier.id")), typeEnforcedRefGen(symbol, reference)) ~ ";
+                }
+            ";
 }

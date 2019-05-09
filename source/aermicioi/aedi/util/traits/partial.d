@@ -27,9 +27,9 @@ License:
 Authors:
 	aermicioi
 **/
-module aermicioi.util.traits.partial;
+module aermicioi.aedi.util.traits.partial;
 
-import aermicioi.util.traits.traits;
+import aermicioi.aedi.util.traits.traits;
 import std.meta;
 import std.traits;
 
@@ -321,24 +321,23 @@ template staticAssert(alias predicate, string error) {
 
 auto curry(Dg, Args...)(Dg func, auto ref Args args)
     if (isSomeFunction!Dg) {
-    import std.typecons;
     class Curry {
         private {
-            Tuple!Args args;
+            Args args;
             Dg func;
         }
 
         public {
             this(ref Args args, Dg func) {
-                this.args = tuple!(args);
+                this.args = args;
                 this.func = func;
             }
 
             ReturnType!Dg opCall(Parameters!Dg[Args.length .. $] args) {
                 static if (is(ReturnType!Dg == void)) {
-                    func(this.args.expand, args);
+                    func(this.args, args);
                 } else {
-                    return func(this.args.expand, args);
+                    return func(this.args, args);
                 }
             }
         }

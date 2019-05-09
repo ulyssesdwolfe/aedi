@@ -40,10 +40,9 @@ import aermicioi.aedi.storage.decorator;
 import aermicioi.aedi.storage.alias_aware;
 import aermicioi.aedi.factory.factory;
 import std.range;
-import std.typecons;
 import std.meta;
 import std.traits;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 
 /**
 TODO: Add description of what this is and why it was designed as such.
@@ -101,7 +100,6 @@ template ProxyContainerImpl(T)
                 InterfacesTuple!T
             ),
             ProxyContainer,
-            MutableDecorator!T,
             Decorator!Container
         );
 
@@ -112,8 +110,6 @@ template ProxyContainerImpl(T)
     {
         private
         {
-            T decorated_;
-
             ObjectStorage!(ProxyObjectFactory, string) proxyFactories;
             ObjectStorage!(Object, string) proxies;
         }

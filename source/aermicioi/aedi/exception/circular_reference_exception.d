@@ -31,6 +31,7 @@ Authors:
 module aermicioi.aedi.exception.circular_reference_exception;
 
 import aermicioi.aedi.exception.di_exception;
+import aermicioi.aedi.util.range : BufferSink;
 
 /**
 Exception denoting a circular dependency in DI container.
@@ -39,21 +40,45 @@ Exception denoting a circular dependency in DI container.
 It is thrown when a DI gets an InProgressException, or it detected a circular dependency in other way.
 **/
 @safe class CircularReferenceException : AediException {
-    private {
-        string[] keys;
-    }
-
+    /**
+    The circular dependency chain found in container.
+    **/
+    string[] chain;
 
     public {
-
-        nothrow this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+        /**
+        * Creates a new instance of Exception. The nextInChain parameter is used
+        * internally and should always be $(D null) when passed by user code.
+        * This constructor does not automatically throw the newly-created
+        * Exception; the $(D throw) statement should be used for that purpose.
+        */
+        nothrow this(string msg, string identity, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
         {
-            super(msg, file, line, next);
+            super(msg, identity, file, line, next);
         }
 
-        nothrow this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__)
+        /**
+        ditto
+        **/
+        nothrow this(string msg, string identity, Throwable next, string file = __FILE__, size_t line = __LINE__)
         {
-            super(msg, file, line, next);
+            super(msg, identity, file, line, next);
+        }
+
+        override void pushMessage(scope void delegate(in char[]) sink) const @system {
+            import std.algorithm : joiner, substitute;
+            import std.array : array;
+            import std.utf : byChar;
+
+            string[] chain = this.chain.dup;
+            auto substituted = this.msg.substitute("${chain}", chain.joiner(" -> ").byChar.array.idup, "${identity}", identity).byChar;
+
+            while (!substituted.empty) {
+                auto buffer = BufferSink!(char[256])();
+                buffer.put(substituted);
+
+                sink(buffer.slice);
+            }
         }
     }
 }

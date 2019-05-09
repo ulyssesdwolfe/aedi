@@ -31,19 +31,56 @@ Authors:
 module aermicioi.aedi.exception.invalid_cast_exception;
 
 import aermicioi.aedi.exception.di_exception;
+import aermicioi.aedi.util.range : BufferSink;
 
 /**
 It is thrown when a factory detects that fetched object from DI container cannot be casted to required interface/class
 that should be passed to newly constructed object.
 **/
 @safe class InvalidCastException : AediException {
-	pure nothrow this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+    /**
+    Expected casting type.
+    **/
+    TypeInfo expected;
+
+    /**
+    Actual type of casted component
+    **/
+    TypeInfo actual;
+
+    /**
+     * Creates a new instance of Exception. The nextInChain parameter is used
+     * internally and should always be $(D null) when passed by user code.
+     * This constructor does not automatically throw the newly-created
+     * Exception; the $(D throw) statement should be used for that purpose.
+     */
+	pure nothrow this(string msg, string identity, TypeInfo expected, TypeInfo actual, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+        this.expected = expected;
+        this.actual = actual;
     }
 
-    nothrow this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__)
+    /**
+    ditto
+    **/
+    nothrow this(string msg, string identity, TypeInfo expected, TypeInfo actual, Throwable next, string file = __FILE__, size_t line = __LINE__)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+        this.expected = expected;
+        this.actual = actual;
     }
+
+    override void pushMessage(scope void delegate(in char[]) sink) const @system {
+        import std.algorithm : substitute;
+        import std.utf : byChar;
+		auto substituted = this.msg.substitute("${identity}", identity, "${expected}", expected.toString, "${actual}", actual.toString).byChar;
+
+        while (!substituted.empty) {
+            auto buffer = BufferSink!(char[256])();
+            buffer.put(substituted);
+
+            sink(buffer.slice);
+        }
+	}
 }

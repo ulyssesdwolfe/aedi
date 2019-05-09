@@ -104,7 +104,7 @@ A decorating factory that detects circular reference insantiations.
 		**/
         Object factory() @safe {
             if (inProcess) {
-                throw new InProgressException("ObjectFactory is already instantiating, type: " ~ this.decorated.type.toString());
+                throw new InProgressException("ObjectFactory is already instantiating component of ${type} type", null, type);
             }
 
             inProcess = true;
@@ -221,20 +221,41 @@ component instantiation pipeline and printing it for debugging purposes.
                 return obj;
             } catch (NotFoundException e) {
 
-                throw new NotFoundException("A dependency for " ~ this.id ~ " could not be found", e);
+                throw new NotFoundException("A dependency for ${identity} could not be found", this.id, e).processThrowChain;
             } catch (InProgressException e) {
+                e.identity = this.id;
 
-                throw new CircularReferenceException("Circular reference detected during construction of " ~ this.id, e);
+                throw new CircularReferenceException("Circular reference detected during construction of ${identity} with chain of dependencies ${chain}", this.id, e);
             } catch(CircularReferenceException e) {
+                e.chain ~= this.id;
 
-                throw new CircularReferenceException("Circular reference detected during construction of " ~ this.id, e);
+                throw e.processThrowChain;
+            } catch(PropertyConfigurerException e) {
+                e.identity = this.id;
+
+                throw e.processThrowChain;
+            } catch(InstanceFactoryException e) {
+                e.identity = this.id;
+
+                throw e.processThrowChain;
             } catch (AediException e) {
 
-                throw new AediException("A library exception occurred during construction of " ~ this.id, e);
+                throw new AediException("A library exception occurred during construction of ${identity}", this.id, e).processThrowChain;
             } catch (Exception e) {
-
-                throw new Exception("A general exception occurred during construction of " ~ this.id, e);
+                import std.conv : text;
+                throw new Exception(text("A general exception occurred during construction of ", this.id), e);
             }
         }
+    }
+}
+
+private {
+    T processThrowChain(T : AediException)(T e) {
+        import aermicioi.aedi.util.range : exceptions, filterByInterface;
+        foreach (CircularReferenceException exception; e.exceptions.filterByInterface!CircularReferenceException) {
+            exception.chain ~= e.identity;
+        }
+
+        return e;
     }
 }

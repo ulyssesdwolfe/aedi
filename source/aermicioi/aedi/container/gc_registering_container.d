@@ -37,12 +37,11 @@ import aermicioi.aedi.storage.alias_aware;
 import aermicioi.aedi.storage.storage;
 import aermicioi.aedi.factory.factory;
 import aermicioi.aedi.exception.not_found_exception;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 import std.meta;
 import std.traits;
 
 import std.range.interfaces;
-import std.typecons;
 
 /**
 Decorating container that will decorate all passed factories with gc registering factory.
@@ -88,16 +87,11 @@ template GcRegisteringContainer(T)
         ),
         InterfacesTuple!T),
         Container,
-        MutableDecorator!T,
         Decorator!Container
     );
 
     @safe class GcRegisteringContainer : InheritanceSet
     {
-        private
-        {
-            T decorated_;
-        }
 
         public
         {

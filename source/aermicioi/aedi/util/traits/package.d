@@ -27,13 +27,7 @@ License:
 Authors:
 	aermicioi
 **/
-module aermicioi.aedi.storage.container;
+module aermicioi.aedi.util.traits;
 
-import aermicioi.aedi.storage.storage;
-import aermicioi.aedi.storage.locator;
-
-
-@safe interface Container(StorageType, StorageKeyType, LocatorType = StorageType, LocatorKeyType = StorageKeyType) :
-    Storage!(StorageType, StorageKeyType), Locator!(LocatorType, LocatorKeyType) {
-
-}
+public import aermicioi.aedi.util.traits.traits;
+public import aermicioi.aedi.util.traits.partial;

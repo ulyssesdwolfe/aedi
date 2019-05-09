@@ -34,6 +34,7 @@ module aermicioi.aedi.configurer.register.factory_configurer;
 
 
 import aermicioi.aedi.configurer.register.configuration_context_factory;
+import aermicioi.aedi.configurer.register.context : ValueRegistrationContext;
 import aermicioi.aedi.container.container;
 import aermicioi.aedi.container.proxy_container;
 import aermicioi.aedi.exception;
@@ -42,7 +43,7 @@ import aermicioi.aedi.storage.allocator_aware;
 import aermicioi.aedi.storage.decorator;
 import aermicioi.aedi.storage.locator;
 import aermicioi.aedi.storage.storage;
-import aermicioi.util.traits;
+import aermicioi.aedi.util.traits;
 public import aermicioi.aedi.factory.reference : lref, anonymous;
 
 import std.meta;
@@ -116,6 +117,16 @@ Z factoryMethod(T, string method, Z : InstanceFactoryAware!X, X, Args...)(Z fact
     ) {
 
     factory.setInstanceFactory(factoryMethodBasedFactory!(T, method)(args));
+    return factory;
+}
+
+/**
+ditto
+**/
+Z factoryMethod(Dg, Z : InstanceFactoryAware!X, X, Args...)(Z factory, Dg func, auto ref Args args)
+    if (isSomeFunction!Dg && is(ReturnType!Dg == X)) {
+
+    factory.setInstanceFactory(functionInstanceFactory(func, args));
     return factory;
 }
 
@@ -267,13 +278,7 @@ auto autowire(Z : InstanceFactoryAware!T, T)(Z factory)
 
     alias ctor = getMembersWithProtection!(T, "__ctor", "public")[0];
 
-    Repeat!(Parameters!ctor.length, RuntimeReference) arguments;
-
-    static foreach (index, argument; arguments) {
-        argument = ParameterIdentifierTuple!ctor[index].lref.alternate(lref!(Parameters!ctor[index]));
-    }
-
-    return factory.construct(arguments);
+    return factory.construct(makeFunctionParameterReferences!ctor.expand);
 }
 
 /**
@@ -283,19 +288,13 @@ auto autowire(string member, Z : PropertyConfigurersAware!T, T)(Z factory)
     if (getMembersWithProtection!(T, member, "public").length > 0) {
     alias method = getMembersWithProtection!(T, member, "public")[0];
 
-    Repeat!(Parameters!method.length, RuntimeReference) arguments;
-
-    static foreach (index, argument; arguments) {
-        argument = ParameterIdentifierTuple!method[index].lref.alternate(
-            lref!(Parameters!method[index])
-        );
-    }
+    auto arguments = makeFunctionParameterReferences!method;
 
     static if (arguments.length == 1) {
         arguments[0] = __traits(identifier, method).lref.alternate(arguments[0]);
     }
 
-    return factory.set!(member)(arguments);
+    return factory.set!(member)(arguments.expand);
 }
 
 /**
@@ -324,7 +323,9 @@ Params:
     value = default value used to instantiate component
 **/
 auto value(Z : InstanceFactoryAware!T, T)(Z factory, auto ref T value) {
-    return factory.setInstanceFactory(new ValueInstanceFactory!T(value));
+    factory.setInstanceFactory(new ValueInstanceFactory!T(value));
+
+    return factory;
 }
 
 /**
@@ -336,7 +337,9 @@ Params:
     delegated = the factory used by factory to instantiate an object.
 **/
 auto parent(Z : InstanceFactoryAware!T, T, X : Factory!W, W : T)(Z factory, X delegated) {
-    return factory.setInstanceFactory(new DelegatingInstanceFactory!(T, W)(delegated));
+    factory.setInstanceFactory(new DelegatingInstanceFactory!(T, W)(delegated));
+
+    return factory;
 }
 /**
 Tag constructed component with some information.
@@ -352,19 +355,89 @@ Returns:
 	factory
 **/
 auto tag(W : ConfigurationContextFactory!T, T, Z)(W factory, auto ref Z tag) {
+    Taggable!Z taggable;
 
-    auto taggable = findDecorator!(Taggable!Z, ObjectFactoryDecorator)(factory.wrapper);
+    import std.range : chain, only;
+    import aermicioi.aedi.util.range : filterByInterface;
 
-    if (taggable is null) {
+    auto candidates = factory.wrapper
+        .decorators!ObjectFactory
+        .filterByInterface!(Taggable!Z)
+        .chain(factory.decorated.only.filterByInterface!(Taggable!Z));
+
+    if (candidates.empty) {
         auto taggableDecorator = new TaggableFactoryDecorator!(Object, Z);
         taggableDecorator.decorated = factory.wrapper;
         factory.wrapper = taggableDecorator;
 
         taggable = taggableDecorator;
         factory.storage.set(factory.wrapper, factory.identity);
+    } else {
+        taggable = candidates.front;
     }
 
     taggable.tag(tag);
+
+    return factory;
+}
+
+/**
+Register a description for component
+
+Params:
+    factory = configuration context for component
+    instance = configuration context for comopnent that is already insantiated
+    title = title for component
+    description = description for component
+
+Returns:
+    Configuration context
+**/
+auto describe(W : ConfigurationContextFactory!T, T)(W factory, string title, string description = null) {
+    import aermicioi.aedi.container.describing_container : IdentityDescriber;
+
+    IdentityDescriber!() describer = factory.locator.locate!(IdentityDescriber!());
+    describer.register(factory.identity, title, description);
+
+    return factory;
+}
+
+/**
+ditto
+**/
+auto describe(ValueRegistrationContext.ValueContext instance, string title, string description = null) {
+    import aermicioi.aedi.container.describing_container : IdentityDescriber;
+
+    IdentityDescriber!() describer = instance.locator.locate!(IdentityDescriber!());
+    describer.register(instance.identity, title, description);
+
+    return instance;
+}
+
+/**
+Run annotation processor over a component and scan it for configuration or new components.
+
+Params:
+    factory = component factory to run scanning over
+
+Returns:
+    factory
+**/
+auto scan(W : GenericFactory!T, T)(W factory)
+    if (!is(W : ConfigurationContextFactory!T, T)) {
+    import aermicioi.aedi.configurer.annotation.component_scan : ConfiguratorPolicyImpl;
+    ConfiguratorPolicyImpl.configure(factory, factory.locator);
+
+    return factory;
+}
+
+/**
+ditto
+**/
+auto scan(W : ConfigurationContextFactory!T, T)(W factory) {
+    import aermicioi.aedi.configurer.annotation.component_scan : ContainerAdderImpl, ConfiguratorPolicyImpl;
+    ContainerAdderImpl!().scan!T(factory.locator, factory.storage);
+    ConfiguratorPolicyImpl.configure(factory, factory.locator);
 
     return factory;
 }
@@ -383,12 +456,14 @@ Returns:
 auto proxy(Z : ConfigurationContextFactory!T, T)(Z factory) @trusted {
     import aermicioi.aedi.factory.proxy_factory : ProxyFactory, ProxyObjectFactory;
     import aermicioi.aedi.container.proxy_container : ProxyContainer;
+    import aermicioi.aedi.util.range : filterByInterface;
 
-    auto proxyAware = cast(ProxyContainer) factory.storage;
-    if (proxyAware !is null) {
-        proxyAware.set(
+    auto candidates = factory.storage.decorators!Container.filterByInterface!ProxyContainer;
+
+    if (!candidates.empty) {
+        candidates.front.set(
             new ProxyObjectWrappingFactory!T(
-                new ProxyFactory!T(factory.identity, proxyAware.decorated)
+                new ProxyFactory!T(factory.identity, candidates.front.decorated)
             ),
             factory.identity,
         );
@@ -470,10 +545,15 @@ Returns:
     factory
 **/
 auto defferredConfiguration(Z : ConfigurationContextFactory!T, T)(Z factory, string defferedExecutionerIdentity) @trusted {
-    auto defferedExecutioinerAware = cast(DefferredExecutionerAware) factory.decorated;
-    if ((defferedExecutioinerAware !is null) && (factory.locator.has(defferedExecutionerIdentity))) {
+    import aermicioi.aedi.util.range : filterByInterface;
+    auto candidates = factory.wrapper
+        .decorators!(Factory!T)
+        .filterByInterface!DefferredExecutionerAware
+        .chain(factory.decorated.only.filterByInterface!DefferredExecutionerAware);
 
-        defferedExecutioinerAware.executioner = factory.locator.locate!DefferredExecutioner(defferedExecutionerIdentity);
+    if (!candidates.empty) {
+
+        candidates.front.executioner = factory.locator.locate!DefferredExecutioner(defferedExecutionerIdentity);
     }
 
     return factory;
@@ -524,5 +604,5 @@ ditto
 **/
 auto defferredConstruction(Z : ConfigurationContextFactory!T, T)(Z factory, string defferedExecutionerIdentity) {
 
-    return factory;
+    return factory.defferredConfiguration(defferedExecutionerIdentity);
 }

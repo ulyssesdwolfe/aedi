@@ -30,19 +30,48 @@ Authors:
 module aermicioi.aedi.exception.instance_factory_exception;
 
 import aermicioi.aedi.exception.di_exception;
+import aermicioi.aedi.util.range : BufferSink;
 
 /**
 Denotes an error that occurred during instantiation process by an object implementing InstanceFactory interface.
 **/
 @safe class InstanceFactoryException : AediException {
+	/**
+	Type of offending component
+	**/
+	TypeInfo type;
 
-    pure nothrow this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+	/**
+     * Creates a new instance of Exception. The nextInChain parameter is used
+     * internally and should always be $(D null) when passed by user code.
+     * This constructor does not automatically throw the newly-created
+     * Exception; the $(D throw) statement should be used for that purpose.
+     */
+    pure nothrow this(string msg, string identity, TypeInfo type, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+		this.type = type;
     }
 
-    nothrow this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__)
+	/**
+	ditto
+	**/
+    nothrow this(string msg, string identity, TypeInfo type, Throwable next, string file = __FILE__, size_t line = __LINE__)
     {
-        super(msg, file, line, next);
+        super(msg, identity, file, line, next);
+		this.type = type;
     }
+
+	override void pushMessage(scope void delegate(in char[]) sink) const @system {
+        import std.algorithm : substitute;
+        import std.utf : byChar;
+		auto substituted = this.msg.substitute("${identity}", identity, "${type}", type.toString).byChar;
+
+        while (!substituted.empty) {
+            auto buffer = BufferSink!(char[256])();
+            buffer.put(substituted);
+
+            sink(buffer.slice);
+        }
+	}
 }

@@ -32,7 +32,8 @@ module aermicioi.aedi.storage.object_storage;
 
 import aermicioi.aedi.exception.not_found_exception;
 import aermicioi.aedi.storage.alias_aware;
-import aermicioi.aedi.storage.container;
+import aermicioi.aedi.storage.locator;
+import aermicioi.aedi.storage.storage;
 
 import std.conv;
 
@@ -41,7 +42,7 @@ import std.conv;
 
  Stores Type elements by KeyType identity in.
 **/
-@safe class ObjectStorage(Type = Object, KeyType = string) : Container!(Type, KeyType), AliasAware!(KeyType) {
+@safe class ObjectStorage(Type = Object, KeyType = string) : Locator!(Type, KeyType), Storage!(Type, KeyType), AliasAware!(KeyType) {
 
     private {
 
@@ -67,7 +68,7 @@ import std.conv;
         Type get(KeyType identity) {
 
             if (!this.has(identity)) {
-                throw new NotFoundException("Element " ~ identity.to!string ~ " not found.");
+                throw new NotFoundException("Element ${identity} not found.", identity.to!string);
             }
 
             return this.values[this.resolve(identity)];
@@ -211,14 +212,11 @@ import std.conv;
         	KeyType the last found identity in alias chain.
         **/
         const(KeyType) resolve(in KeyType alias_) const {
-            import std.typecons : Rebindable;
-            Rebindable!(const(KeyType)) aliased = alias_;
-
-            while ((aliased in this.aliasings) !is null) {
-                aliased = this.aliasings[aliased];
+            if (alias_ in this.aliasings) {
+                return this.resolve(this.aliasings[alias_]);
             }
 
-            return aliased;
+            return alias_;
         }
     }
 }
