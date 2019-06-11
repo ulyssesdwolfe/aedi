@@ -14,6 +14,8 @@ project_version_full   = project_version + project_version_suffix
 source_root = meson.source_root()
 build_root = meson.build_root()
 
+compiler = meson.get_compiler('d').get_id()
+message(compiler)
 
 if meson.get_compiler('d').get_id() == 'llvm'
 endif
@@ -27,8 +29,6 @@ aedi_src_d = include_directories('source/')
 # Modules
 # Aedi
 subdir('source/aermicioi/aedi')
-# Util
-subdir('source/aermicioi/util')
 # Test 
 subdir('source/aermicioi/aedi/test')
 
@@ -36,16 +36,13 @@ deps = [
     ]
 
 #
-aedi_lib = static_library('aedi',
+aedi_static_lib = static_library('aedi',
     [aermicioi_aedi_src],
-    [aermicioi_util_src],
     include_directories : aedi_src_d,
     dependencies : [deps],
-    version: project_version, 
-    soversion : project_soversion
     )
 
-aedi_dep = declare_dependency(link_with : aedi_lib, include_directories : aedi_src_d)
+aedi_dep = declare_dependency(link_with : aedi_static_lib, include_directories : aedi_src_d)
 
 
 ######## UNIT TESTING #########
@@ -53,11 +50,9 @@ aedi_dep = declare_dependency(link_with : aedi_lib, include_directories : aedi_s
 aedi_test_bin = executable('aedi_unittest',
     [aermicioi_aedi_test_src],
     [aermicioi_aedi_src],
-    [aermicioi_util_src],
     include_directories : aedi_src_d,
+    link_with : aedi_static_lib,
     dependencies : [deps],
-    d_args : meson.get_compiler('d').unittest_args(),
-    link_args : '-main'
     )
 
 

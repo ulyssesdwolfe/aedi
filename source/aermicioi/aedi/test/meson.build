@@ -14,6 +14,7 @@ aermicioi_aedi_test_src = files(
         'container/aliasing_container.d',
         'container/application_container.d',
         'container/deffered_container.d',
+        'container/describing_container.d',
         'container/factory.d',
         'container/prototype_container.d',
         'container/proxy_container.d',

@@ -18,6 +18,8 @@ __test__library__
 aedi-test-library
 aedi-test-unittest
 .vscode/
+./aedi
+
+
 ./aedibuilddir
 builddir/
-./aedi

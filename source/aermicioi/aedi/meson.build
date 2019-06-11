@@ -1,5 +1,6 @@
 aermicioi_aedi_src_d = include_directories('.')
 
+subdir('util/')
 
 aermicioi_aedi_src = files(
         #configurer/annotation
@@ -19,6 +20,7 @@ aermicioi_aedi_src = files(
         'container/container.d',
         'container/decorating_mixin.d',
         'container/deffered_container.d',
+        'container/describing_container.d',
         'container/factory.d',
         'container/gc_registering_container.d',
         'container/prototype_container.d',
