@@ -47,16 +47,16 @@ aedi_dep = declare_dependency(link_with : aedi_static_lib, include_directories :
 
 ######## UNIT TESTING #########
 
-aedi_test_bin = executable('aedi_unittest',
-    [aermicioi_aedi_test_src],
-    [aermicioi_aedi_src],
-    include_directories : aedi_src_d,
-    link_with : aedi_static_lib,
-    dependencies : [deps],
-    )
+#aedi_test_bin = executable('aedi_unittest',
+#    [aermicioi_aedi_test_src],
+#    [aermicioi_aedi_src],
+#    include_directories : aedi_src_d,
+#    link_with : aedi_static_lib,
+#    dependencies : [deps],
+#    )
 
 
-test('aedi_unittest', aedi_test_bin)
+# test('aedi_unittest', aedi_test_bin)
 
 
 
