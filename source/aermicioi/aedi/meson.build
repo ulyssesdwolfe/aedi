@@ -36,6 +36,7 @@ aermicioi_aedi_src = files(
         'exception/circular_reference_exception.d',
         'exception/di_exception.d',
         'exception/in_progress_exception.d',
+        'exception/in_use_exception.d',
         'exception/instance_factory_exception.d',
         'exception/invalid_cast_exception.d',
         'exception/not_found_exception.d',

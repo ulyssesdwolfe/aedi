@@ -20,6 +20,5 @@ aedi-test-unittest
 .vscode/
 ./aedi
 
-
 ./aedibuilddir
 builddir/
