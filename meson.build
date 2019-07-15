@@ -30,8 +30,6 @@ aedi_src_d = include_directories('source/')
 # Aedi
 subdir('source/aermicioi/aedi')
 # Test 
-subdir('source/aermicioi/aedi/test')
-subdir('source/aermicioi/aedi/util')
 
 deps = [
     ]
@@ -39,6 +37,7 @@ deps = [
 #
 aedi_static_lib = static_library('aedi',
     [aermicioi_aedi_src],
+    [aermicioi_aedi_util_src],
     include_directories : aedi_src_d,
     dependencies : [deps],
     )
