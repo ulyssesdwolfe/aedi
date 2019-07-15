@@ -31,6 +31,7 @@ aedi_src_d = include_directories('source/')
 subdir('source/aermicioi/aedi')
 # Test 
 subdir('source/aermicioi/aedi/test')
+subdir('source/aermicioi/aedi/util')
 
 deps = [
     ]
