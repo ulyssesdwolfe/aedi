@@ -6,7 +6,7 @@ multiple_containers_bin = executable(
         'multiple_containers-bin',
         [multiple_containers_src],
         [aermicioi_aedi_src],
-        [aermicioi_util_src],
+        [aermicioi_aedi_util_src],
         include_directories : [aedi_src_d]
         )
 

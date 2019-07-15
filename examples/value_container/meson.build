@@ -6,7 +6,7 @@ value_container_bin = executable(
         'value_container-bin',
         [value_container_src],
         [aermicioi_aedi_src],
-        [aermicioi_util_src],
+        [aermicioi_aedi_util_src],
         include_directories : [aedi_src_d]
         )
 
