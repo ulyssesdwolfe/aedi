@@ -3,15 +3,24 @@ aermicioi_aedi_src_d = include_directories('.')
 subdir('util/')
 
 aermicioi_aedi_src = files(
+        'package.d',
+        
+        #configurer
+        'configurer/package.d',
+
         #configurer/annotation
         'configurer/annotation/annotation.d',
         'configurer/annotation/component_scan.d',
+        'configurer/annotation/package.d',
         
         #configurer/register
         'configurer/register/configuration_context_factory.d',
         'configurer/register/container.d',
         'configurer/register/context.d',
         'configurer/register/factory_configurer.d',
+        'configurer/register/package.d',
+
+
         
         #container
         'container/aggregate_container.d',
@@ -31,6 +40,7 @@ aermicioi_aedi_src = files(
         'container/tuple_container.d',
         'container/type_based_container.d',
         'container/value_container.d',
+        'container/package.d',
 
         #exception
         'exception/circular_reference_exception.d',
@@ -41,6 +51,7 @@ aermicioi_aedi_src = files(
         'exception/invalid_cast_exception.d',
         'exception/not_found_exception.d',
         'exception/property_configurer_exception.d',
+        'exception/package.d',
 
         #factory
         'factory/decorating_factory.d',
@@ -49,6 +60,7 @@ aermicioi_aedi_src = files(
         'factory/proxy_factory.d',
         'factory/reference.d',
         'factory/wrapping_factory.d',
+        'factory/package.d',
 
         #storage
         'storage/aggregate_locator.d',
@@ -60,6 +72,7 @@ aermicioi_aedi_src = files(
         'storage/object_storage.d',
         'storage/storage.d',
         'storage/wrapper.d',
+        'storage/package.d',
 
         #test
         
