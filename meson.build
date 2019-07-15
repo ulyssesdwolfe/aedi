@@ -36,6 +36,10 @@ aedi_src_d = include_directories('source/')
 # Modules
 # Aedi
 subdir('source/aermicioi/aedi')
+# Test 
+
+deps = [
+    ]
 
 #
 aedi_static_lib = static_library('aedi',
@@ -43,6 +47,7 @@ aedi_static_lib = static_library('aedi',
     [aermicioi_aedi_util_src],
     include_directories : aedi_src_d,
     )
+
 aedi_lib = library('aedi',
     [aermicioi_aedi_src],
     [aermicioi_aedi_util_src],
@@ -51,7 +56,6 @@ aedi_lib = library('aedi',
 
 aedi_static_dep = declare_dependency(link_with : aedi_static_lib, include_directories : aedi_src_d)
 aedi_dep = declare_dependency(link_with : aedi_lib, include_directories : aedi_src_d)
-
 
 
 ######## TESTING #########
