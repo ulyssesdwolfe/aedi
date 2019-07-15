@@ -1,6 +1,7 @@
 aermicioi_aedi_src_d = include_directories('.')
 
 subdir('util/')
+subdir('test/')
 
 aermicioi_aedi_src = files(
         'package.d',
