@@ -58,6 +58,7 @@ module aermicioi.aedi.factory;
 public import aermicioi.aedi.factory.factory;
 public import aermicioi.aedi.factory.generic_factory;
 public import aermicioi.aedi.factory.decorating_factory;
+public import aermicioi.aedi.factory.deferring_factory;
 public import aermicioi.aedi.factory.proxy_factory;
 public import aermicioi.aedi.factory.reference;
 public import aermicioi.aedi.factory.wrapping_factory;

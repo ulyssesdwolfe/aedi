@@ -19,3 +19,8 @@ aedi-test-library
 aedi-test-unittest
 .vscode/
 ./aedi
+
+./aedibuilddir
+builddir/
+build.d/
+compiledir
