@@ -20,13 +20,15 @@ message(compiler)
 if meson.get_compiler('d').get_id() == 'llvm'
 endif
 if meson.get_compiler('d').get_id() == 'dmd'
-  add_global_arguments(
-    '-lphobos2',
-    '-ldruntime',
-    '-ldl',
-    '-lpthread',
-    '-lm',
-  )
+  if meson.is_subproject() == false
+    add_global_arguments(
+      '-lphobos2',
+      '-ldruntime',
+      '-ldl',
+      '-lpthread',
+      '-lm',
+    )
+  endif
 endif
 if meson.get_compiler('d').get_id() == 'gnu'
 endif
